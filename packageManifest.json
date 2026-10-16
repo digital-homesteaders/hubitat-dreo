@@ -1,0 +1,58 @@
+{
+  "packageName": "Dreo Connect",
+  "author": "Digital Homesteaders",
+  "version": "0.1.0",
+  "minimumHEVersion": "2.3.0",
+  "dateReleased": "2026-10-15",
+  "documentationLink": "https://github.com/GITHUB_OWNER/hubitat-dreo#readme",
+  "licenseFile": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/LICENSE",
+  "releaseNotes": "First release: Dreo tower fans, air circulators and ceiling fans over Dreo's cloud.",
+  "apps": [
+    {
+      "id": "fd84052a-2c44-4198-bb0f-3fc2309386ee",
+      "name": "Dreo Connect",
+      "namespace": "dreo",
+      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/apps/dreo-connect.groovy",
+      "required": true,
+      "oauth": false,
+      "primary": true
+    }
+  ],
+  "drivers": [
+    {
+      "id": "55dff51a-ef29-4756-82bd-9c48b8202748",
+      "name": "Dreo Cloud Connection",
+      "namespace": "dreo",
+      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-cloud-connection.groovy",
+      "required": true
+    },
+    {
+      "id": "b10a60ed-46c5-4f95-89e3-5e730aa063b9",
+      "name": "Dreo Fan",
+      "namespace": "dreo",
+      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-fan.groovy",
+      "required": true
+    },
+    {
+      "id": "8a58aa03-1ade-4bf4-ac63-4cf7f0dc4e71",
+      "name": "Dreo Ceiling Fan",
+      "namespace": "dreo",
+      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-ceiling-fan.groovy",
+      "required": true
+    },
+    {
+      "id": "edfd16b0-a13a-48a8-9ed3-a743d437377e",
+      "name": "Dreo Ceiling Light",
+      "namespace": "dreo",
+      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-ceiling-light.groovy",
+      "required": true
+    },
+    {
+      "id": "ceb9c117-dd8c-4113-b170-152283ae46d7",
+      "name": "Dreo Light Ring",
+      "namespace": "dreo",
+      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-light-ring.groovy",
+      "required": true
+    }
+  ]
+}
