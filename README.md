@@ -105,26 +105,66 @@ dark ring turns it on, like the Dreo app.
 
 ## What needs testing
 
-Everything below is written but has never run on a hub:
+### Covered locally (no hub needed)
 
-1. App and drivers save without compile errors in Apps Code / Drivers Code.
+`tests/run.sh` compiles the app and every driver with Groovy 2.4 (the version
+Hubitat runs) against small stand-ins for the hub, then runs:
+
+- **CompileCheck**: every file compiles and its `definition`/`metadata`/
+  `preferences` code runs; no method shadows a metadata word such as
+  `command`; every method a driver calls on its parent (and the app calls on
+  its child devices) exists and is not private.
+- **MappingTest**: named speeds for 4, 8, 9, 10 and 12 steps; every command's
+  Dreo params (speeds incl. auto and leaving auto, step bounds, cycling, modes,
+  single- and two-axis oscillation, display incl. `lightmode`, panel sound via
+  `voiceon`/`muteon`, child lock, ceiling light, light ring); the ceiling-fan
+  power gate (cases from hass-dreo's `PyDreoCeilingFan`); temperature with
+  `tempunit` 0/1, the >50 rule, offsets and °F/°C hubs; RGB/hue round-trips;
+  and the events for sample DR-HAF001S, DR-HPF008S (with light ring) and
+  DR-HCF ceiling fan states.
+- **DriverFlowTest**: the app and real drivers together, with state passed
+  through JSON as on a hub: discovery and rooms, child creation and removal,
+  WebSocket open/reports/acks, the one-at-a-time command queue, retries and
+  reconnect after a missing ack, light ring and ceiling light children, the
+  gate on a real command, online/offline, REST refresh and the speed-step
+  preference.
+
+To run them, get a JDK and Groovy 2.4 once (downloaded into the git-ignored
+`.tools/`; nothing is installed system-wide; or have `java` and `groovy` on
+your PATH), then run the tests:
+
+```bash
+tests/setup-tools.sh
+```
+
+```bash
+tests/run.sh
+```
+
+The stand-ins only model the hub as far as these files use it, so the hub
+itself still needs checking.
+
+### Still needs a hub
+
+1. App and drivers save in Apps Code / Drivers Code (the local compile uses
+   the same Groovy, but not Hubitat's sandbox or its class whitelist).
 2. Password hashing: the password field clears and sign-in works (MD5 via
    `java.security.MessageDigest`).
-3. Async sign-in, the EU region redirect, and the 30-minute back-off after a
-   wrong password.
-4. **Choose fans** page: the async discovery with page auto-refresh, rooms shown
-   next to names, and whether it works before the app's first **Done**.
-5. Child device creation and removal when fans are ticked or unticked.
-6. WebSocket: connect with `pingInterval`, the "2" keepalive, status
-   handling, reconnect back-off, reconnect after a hub reboot (Initialize).
-7. Command queue: acknowledgements, retries, and recovery after a silent dead
-   link.
-8. Per fan (DR-HAF001S, DR-HTF004S, DR-HPF008S, DR-HPF004S): switch, named
-   speeds, `setSpeedLevel`, modes, oscillation, display, panel sound, child
-   lock, temperature in °F and °C hub scales. The DR-HTF004S is not in
-   hass-dreo's table, so its speed range is a guess (1–9).
-9. Light ring on the DR-HPF008S: on/off, level 1–3, colour round-trip, effects.
-10. Ceiling fan (when it arrives): power gate, light child, colour temperature.
+3. Async sign-in against Dreo, the EU region redirect, and the 30-minute
+   back-off after a wrong password.
+4. **Choose fans** page: the page auto-refresh during discovery, how it looks,
+   and whether it works before the app's first **Done**.
+5. Real WebSocket behaviour: `pingInterval`, the status strings Hubitat
+   actually sends, reconnect after a hub reboot (Initialize), and whether Dreo
+   acknowledges commands as expected.
+6. Per fan (DR-HAF001S, DR-HTF004S, DR-HPF008S, DR-HPF004S): that the real
+   state keys match the samples in the tests, and the fan does what the params
+   say. The DR-HTF004S is not in hass-dreo's table, so its speed range is a
+   guess (1–9).
+7. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
+   effects.
+8. Ceiling fan (when it arrives): the power gate and light child on the real
+   fan.
 
 ## Credits and licence
 

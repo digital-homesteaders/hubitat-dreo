@@ -54,21 +54,25 @@ preferences {
 @Field static final String PATH_ROOMS = "/api/app/index/family/room/devices"
 @Field static final String PATH_STATE = "/api/user-device/device/state"
 
-// Mode lists: [id, value of the fan's `mode`/`windtype` key].
-@Field static final List MODES_BASIC = [["normal", 1], ["natural", 2], ["sleep", 3], ["auto", 4]]
-@Field static final List MODES_TURBO = [["normal", 1], ["natural", 2], ["sleep", 3], ["auto", 4], ["turbo", 5]]
-@Field static final List MODES_CUSTOM = [["normal", 1], ["natural", 2], ["sleep", 3], ["auto", 4], ["turbo", 5], ["custom", 6]]
-// DR-HPF017S and DR-HPF025S swap natural and auto (per hass-dreo; unverified).
-@Field static final List MODES_SWAPPED = [["normal", 1], ["auto", 2], ["sleep", 3], ["natural", 4], ["turbo", 5]]
-@Field static final List MODES_SWAPPED_CUSTOM = [["normal", 1], ["auto", 2], ["sleep", 3], ["natural", 4], ["turbo", 5], ["custom", 6]]
-@Field static final List MODES_CEILING = [["normal", 1], ["natural", 2], ["sleep", 3], ["reverse", 4]]
+// Mode lists by name: [id, value of the fan's `mode`/`windtype` key].
+// (FAMILIES and MODELS name these lists: a @Field initializer can't refer to
+// another @Field in the Groovy that Hubitat runs.)
+@Field static final Map MODE_LISTS = [
+    basic: [["normal", 1], ["natural", 2], ["sleep", 3], ["auto", 4]],
+    turbo: [["normal", 1], ["natural", 2], ["sleep", 3], ["auto", 4], ["turbo", 5]],
+    custom: [["normal", 1], ["natural", 2], ["sleep", 3], ["auto", 4], ["turbo", 5], ["custom", 6]],
+    // DR-HPF017S and DR-HPF025S swap natural and auto (per hass-dreo; unverified).
+    swapped: [["normal", 1], ["auto", 2], ["sleep", 3], ["natural", 4], ["turbo", 5]],
+    swappedCustom: [["normal", 1], ["auto", 2], ["sleep", 3], ["natural", 4], ["turbo", 5], ["custom", 6]],
+    ceiling: [["normal", 1], ["natural", 2], ["sleep", 3], ["reverse", 4]],
+]
 
 // Family defaults by model prefix. Unknown fans in a family use these.
 @Field static final Map FAMILIES = [
-    "DR-HTF": [kind: "tower", speed: [1, 9], modes: MODES_BASIC],
-    "DR-HAF": [kind: "circulator", speed: [1, 9], modes: MODES_BASIC],
-    "DR-HPF": [kind: "circulator", speed: [1, 9], modes: MODES_BASIC],
-    "DR-HCF": [kind: "ceiling", speed: [1, 12], modes: MODES_CEILING],
+    "DR-HTF": [kind: "tower", speed: [1, 9], modes: "basic"],
+    "DR-HAF": [kind: "circulator", speed: [1, 9], modes: "basic"],
+    "DR-HPF": [kind: "circulator", speed: [1, 9], modes: "basic"],
+    "DR-HCF": [kind: "ceiling", speed: [1, 12], modes: "ceiling"],
 ]
 
 // Per-model details, from hass-dreo's pydreo/models.py. `ring` is the light
@@ -83,16 +87,16 @@ preferences {
     "DR-HTF024S": [speed: [1, 9]],
     "DR-HTF518S": [speed: [1, 9]],
     "DR-HAF001S": [speed: [1, 4]],
-    "DR-HAF008S": [speed: [1, 9], modes: MODES_TURBO],
-    "DR-HPF004S": [speed: [1, 9], modes: MODES_CUSTOM],
-    "DR-HPF005S": [speed: [1, 10], modes: MODES_CUSTOM],
-    "DR-HPF007S": [speed: [1, 10], modes: MODES_CUSTOM],
-    "DR-HPF008S": [speed: [1, 9], modes: MODES_TURBO, ring: [1, 3]],
-    "DR-HPF015S": [speed: [1, 12], modes: MODES_CUSTOM],
-    "DR-HPF017S": [speed: [1, 12], modes: MODES_SWAPPED_CUSTOM],
-    "DR-HPF020S": [speed: [1, 9], modes: MODES_CUSTOM],
-    "DR-HPF022S": [speed: [1, 9], modes: MODES_TURBO],
-    "DR-HPF025S": [speed: [1, 9], modes: MODES_SWAPPED],
+    "DR-HAF008S": [speed: [1, 9], modes: "turbo"],
+    "DR-HPF004S": [speed: [1, 9], modes: "custom"],
+    "DR-HPF005S": [speed: [1, 10], modes: "custom"],
+    "DR-HPF007S": [speed: [1, 10], modes: "custom"],
+    "DR-HPF008S": [speed: [1, 9], modes: "turbo", ring: [1, 3]],
+    "DR-HPF015S": [speed: [1, 12], modes: "custom"],
+    "DR-HPF017S": [speed: [1, 12], modes: "swappedCustom"],
+    "DR-HPF020S": [speed: [1, 9], modes: "custom"],
+    "DR-HPF022S": [speed: [1, 9], modes: "turbo"],
+    "DR-HPF025S": [speed: [1, 9], modes: "swapped"],
     "DR-HCF001S": [speed: [1, 12]],
     "DR-HCF002S": [speed: [1, 12]],
     "DR-HCF007S": [speed: [1, 12], ring: [1, 100]],
@@ -252,9 +256,9 @@ private void syncChildren() {
         if (!f) return
         String driver = kindOf(f.model) == "ceiling" ? "Dreo Ceiling Fan" : "Dreo Fan"
         try {
-            def cd = addChildDevice("dreo", driver, fanDni(sn), [name: f.series ?: f.model, label: f.name, isComponent: false])
-            cd.updateDataValue("sn", sn)
-            cd.updateDataValue("model", f.model)
+            // Data values go in with the device: its installed() runs inside addChildDevice.
+            addChildDevice("dreo", driver, fanDni(sn), [name: f.series ?: f.model, label: f.name, isComponent: false,
+                data: [sn: sn, model: f.model]])
             log.info "Dreo: added ${f.name} (${f.model})"
         } catch (e) {
             log.error "Dreo: could not add ${f.name}: ${e.message} (is the '${driver}' driver installed?)"
@@ -620,7 +624,7 @@ private Map profile(String model, Map s, Map opts) {
     String modeKey = s.containsKey("mode") ? "mode" : s.containsKey("windtype") ? "windtype" : "mode"
     return [
         kind: kind, min: min, max: max, steps: max - min + 1,
-        modes: m.modes ?: fam.modes, powerKey: powerKey, modeKey: modeKey,
+        modes: MODE_LISTS[m.modes ?: fam.modes], powerKey: powerKey, modeKey: modeKey,
         ring: m.ring ?: [1, 5],
     ]
 }
@@ -861,7 +865,8 @@ private Map oscillationParams(Map s, String v) {
     String key = OSC_KEYS.find { s.containsKey(it) }
     if (!key) throw new IllegalArgumentException("this fan does not oscillate")
     if (v in ["vertical", "both"]) throw new IllegalArgumentException("this fan only oscillates horizontally")
-    return [(key): v in ["on", "horizontal"]]
+    if (!(v in ["off", "on", "horizontal"])) throw new IllegalArgumentException("oscillation must be off, on or horizontal")
+    return [(key): v != "off"]
 }
 
 private Map lightParams(Map p, Map s, String cmd, List args) {

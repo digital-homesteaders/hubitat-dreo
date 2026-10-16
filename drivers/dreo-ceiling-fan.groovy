@@ -57,33 +57,33 @@ def refresh() {
 
 // ---------------------------------------------------------------- commands
 
-def on() { command("on") }
-def off() { command("off") }
-def setSpeed(speed) { command("setSpeed", [speed]) }
-def cycleSpeed() { command("cycleSpeed") }
-def setSpeedLevel(level) { command("setSpeedLevel", [level]) }
-def setMode(mode) { command("setMode", [mode]) }
-def setPanelSound(value) { command("setPanelSound", [value]) }
-def setChildLock(value) { command("setChildLock", [value]) }
+def on() { sendDreo("on") }
+def off() { sendDreo("off") }
+def setSpeed(speed) { sendDreo("setSpeed", [speed]) }
+def cycleSpeed() { sendDreo("cycleSpeed") }
+def setSpeedLevel(level) { sendDreo("setSpeedLevel", [level]) }
+def setMode(mode) { sendDreo("setMode", [mode]) }
+def setPanelSound(value) { sendDreo("setPanelSound", [value]) }
+def setChildLock(value) { sendDreo("setChildLock", [value]) }
 
 // Light and light ring child (component) commands.
-def componentOn(cd) { command("${childKind(cd)}.on") }
-def componentOff(cd) { command("${childKind(cd)}.off") }
-def componentSetLevel(cd, level, duration = null) { command("${childKind(cd)}.setLevel", [level]) }
-def componentSetColorTemperature(cd, ct, level = null, transition = null) { command("light.setColorTemperature", [ct, level]) }
-def componentSetColor(cd, Map color) { command("ring.setColor", [color]) }
-def componentSetHue(cd, hue) { command("ring.setHue", [hue]) }
-def componentSetSaturation(cd, saturation) { command("ring.setSaturation", [saturation]) }
-def componentSetEffect(cd, effect) { command("ring.setEffect", [effect]) }
-def componentSetNextEffect(cd) { command("ring.setNextEffect") }
-def componentSetPreviousEffect(cd) { command("ring.setPreviousEffect") }
+def componentOn(cd) { sendDreo("${childKind(cd)}.on") }
+def componentOff(cd) { sendDreo("${childKind(cd)}.off") }
+def componentSetLevel(cd, level, duration = null) { sendDreo("${childKind(cd)}.setLevel", [level]) }
+def componentSetColorTemperature(cd, ct, level = null, transition = null) { sendDreo("light.setColorTemperature", [ct, level]) }
+def componentSetColor(cd, Map color) { sendDreo("ring.setColor", [color]) }
+def componentSetHue(cd, hue) { sendDreo("ring.setHue", [hue]) }
+def componentSetSaturation(cd, saturation) { sendDreo("ring.setSaturation", [saturation]) }
+def componentSetEffect(cd, effect) { sendDreo("ring.setEffect", [effect]) }
+def componentSetNextEffect(cd) { sendDreo("ring.setNextEffect") }
+def componentSetPreviousEffect(cd) { sendDreo("ring.setPreviousEffect") }
 def componentRefresh(cd) { refresh() }
 
 private String childKind(cd) {
     return cd.deviceNetworkId.endsWith("-ring") ? "ring" : "light"
 }
 
-private void command(String cmd, List args = []) {
+private void sendDreo(String cmd, List args = []) {
     Map params = parent?.dreoCommand(device, state.dreo ?: [:], cmd, args, opts())
     // Show the change straight away; the fan's own report follows.
     if (params) dreoUpdate(params, null)
