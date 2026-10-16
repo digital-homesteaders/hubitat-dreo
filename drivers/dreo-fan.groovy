@@ -26,12 +26,12 @@ metadata {
         attribute "childLock", "string"
         attribute "healthStatus", "enum", ["online", "offline"]
 
-        command "setSpeedLevel", [[name: "level*", type: "NUMBER", description: "Fan step, 1 to maxSpeedLevel (0 = off)"]]
-        command "setMode", [[name: "mode*", type: "ENUM", constraints: ["normal", "natural", "sleep", "auto", "turbo", "custom"]]]
-        command "setOscillation", [[name: "oscillation*", type: "ENUM", constraints: ["off", "on", "horizontal", "vertical", "both"]]]
-        command "setDisplay", [[name: "display*", type: "ENUM", constraints: ["on", "off", "auto"]]]
-        command "setPanelSound", [[name: "sound*", type: "ENUM", constraints: ["on", "off"]]]
-        command "setChildLock", [[name: "lock*", type: "ENUM", constraints: ["on", "off"]]]
+        command "setSpeedLevel", [[name: "Speed level*", type: "NUMBER", description: "Fan step, 1 to maxSpeedLevel (0 = off)"]]
+        command "setMode", [[name: "Mode*", type: "ENUM", description: "Fan mode to set", constraints: ["normal", "natural", "sleep", "auto", "turbo", "custom"]]]
+        command "setOscillation", [[name: "Oscillation*", type: "ENUM", description: "Oscillation to set", constraints: ["off", "on", "horizontal", "vertical", "both"]]]
+        command "setDisplay", [[name: "Display*", type: "ENUM", description: "Display on, off or automatic", constraints: ["on", "off", "auto"]]]
+        command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed", constraints: ["on", "off"]]]
+        command "setChildLock", [[name: "Child lock*", type: "ENUM", description: "Lock the fan's buttons", constraints: ["on", "off"]]]
     }
     preferences {
         input "speedSteps", "number", title: "Number of speed steps (0 = from the model)", defaultValue: 0, range: "0..20"
