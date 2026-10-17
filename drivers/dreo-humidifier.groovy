@@ -22,6 +22,8 @@ metadata {
         attribute "operatingState", "enum", ["off", "humidifying", "idle"]
         attribute "waterTank", "string"
         attribute "waterLevel", "number"
+        attribute "useSinceCleaning", "number"
+        attribute "filterLife", "number"
         attribute "display", "string"
         attribute "panelSound", "string"
         attribute "ambientLight", "string"

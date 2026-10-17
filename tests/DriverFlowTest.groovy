@@ -348,6 +348,20 @@ check("humidifier commands: sent, shown straight away, acked") {
     assert app.log.at("warn").any { it.contains("target humidity must be 30-80") }
 }
 
+check("raw data button logs the device list and each state, without mac or ssid") {
+    app.appButtonHandler("dumpRaw")
+    Map req = app.callsNamed("asynchttpGet").last()[3]
+    assert req.cb == "dumpDevices"
+    app.dumpDevices([list: [[sn: "SN5", model: "DR-HHM001S", mac: "aa:bb", controlsConf: [template: "DR-HHM001S"]]]], [:])
+    assert app.callsNamed("asynchttpGet").last()[3].data == [sn: "SN5", model: "DR-HHM001S"]
+    app.dumpState([mixed: [worktime: [state: 12], filtertime: [state: 75], wifi_ssid: [state: "home"],
+        module_hardware_mac: [state: "aa:bb"]]], [sn: "SN5", model: "DR-HHM001S"])
+    List info = app.log.at("info")
+    assert info.any { it.contains('Dreo raw device DR-HHM001S SN5: {"sn":"SN5"') && it.contains('"template":"DR-HHM001S"') }
+    assert info.any { it == 'Dreo raw state DR-HHM001S SN5: {"filtertime":75,"worktime":12}' }
+    assert !info.any { it.contains("aa:bb") || it.contains("home") }
+}
+
 check("unticking a fan removes it") {
     app.settings.selectedFans = ["SN2"]
     app.updated()

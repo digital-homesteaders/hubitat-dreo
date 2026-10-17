@@ -164,6 +164,10 @@ def mainPage() {
         }
         section("Logging") {
             input "logEnable", "bool", title: "Debug logging", defaultValue: false
+            if (settings.email && state.passwordHash) {
+                input name: "dumpRaw", type: "button", title: "Log raw Dreo data"
+                paragraph "Writes each device's raw Dreo device-list entry and full state to Logs, for reporting a model that isn't mapped yet."
+            }
         }
     }
 }
@@ -438,7 +442,13 @@ def discoverDevices(data, Map ctx) {
         String kind = kindOf(d.model)
         if (kind) {
             found[d.sn] = [name: d.deviceName ?: d.model, model: d.model, series: d.seriesName]
-            if (kind == "humidifier") found[d.sn].limits = humidifierLimits(d.controlsConf)
+            if (kind == "humidifier") {
+                try {
+                    found[d.sn].limits = humidifierLimits(d.controlsConf)
+                } catch (e) {
+                    log.warn "Dreo: could not read ${d.model} limits (${e}); using defaults"
+                }
+            }
         } else {
             unsupported << "${d.deviceName ?: d.model} (${d.model})"
         }
@@ -463,6 +473,34 @@ def discoverRooms(data, Map ctx) {
     }
     state.discoveredAt = now()
     state.remove("discovering")
+}
+
+// ---------------------------------------------------------------- raw data dump
+
+def appButtonHandler(String btn) {
+    if (btn == "dumpRaw") {
+        log.info "Dreo: logging raw Dreo data"
+        apiGet(PATH_DEVICES, [acceptLanguage: "en", method: "devices", pageNo: 1, pageSize: 100], "dumpDevices")
+    }
+}
+
+def dumpDevices(data, Map ctx) {
+    if (data == null) return
+    (data.list ?: []).each { d ->
+        // The device list holds no secrets except mac addresses, which are left out.
+        Map entry = d.findAll { k, v -> !(k in ["mac", "resourcesConf"]) }
+        log.info "Dreo raw device ${d.model} ${d.sn}: ${JsonOutput.toJson(entry)}"
+        if (d.sn) apiGet(PATH_STATE, [deviceSn: d.sn], "dumpState", [sn: d.sn, model: d.model])
+    }
+}
+
+def dumpState(data, Map ctx) {
+    if (data == null) return
+    Map flat = new TreeMap()
+    (data.mixed ?: [:]).each { k, v ->
+        if (!(k in ["module_hardware_mac", "wifi_ssid"])) flat[k] = (v instanceof Map && v.containsKey("state")) ? v.state : v
+    }
+    log.info "Dreo raw state ${ctx.model} ${ctx.sn}: ${JsonOutput.toJson(flat)}"
 }
 
 // ---------------------------------------------------------------- state refresh
@@ -1052,6 +1090,9 @@ List humidifierEvents(Map p, Map s) {
         ev << [name: "waterTank", value: w == 0 ? "ok" : w in HUM_TANK_EMPTY ? "empty" : "fault ${w}".toString()]
     }
     if (s.waterlevel instanceof Number) ev << [name: "waterLevel", value: s.waterlevel as int, unit: "%"]
+    // hass-dreo's "Use since cleaning" (hours) and "Filter Life" (%).
+    if (s.worktime instanceof Number) ev << [name: "useSinceCleaning", value: s.worktime as int, unit: "h"]
+    if (s.filtertime instanceof Number) ev << [name: "filterLife", value: s.filtertime as int, unit: "%"]
     if (s.ledlevel instanceof Number) ev << [name: "display", value: (s.ledlevel as int) > 0 ? "on" : "off"]
     if (s.containsKey("muteon")) ev << [name: "panelSound", value: s.muteon ? "off" : "on"]
     if (s.containsKey("ambient_switch")) ev << [name: "ambientLight", value: s.ambient_switch ? "on" : "off"]

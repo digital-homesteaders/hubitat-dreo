@@ -48,6 +48,10 @@ needs its `GITHUB_OWNER` placeholders replaced.
    password, open **Choose devices**, tick the fans and humidifiers you want,
    then press **Done**.
 
+If a device isn't mapped yet or shows the wrong thing, press **Log raw Dreo
+data** in the app (under Logging): it writes each device's raw device-list
+entry and full state to **Logs**, without MAC addresses or the Wi-Fi name.
+
 Only an MD5 hash of the password is stored (that is what Dreo's sign-in
 expects); the password field is cleared once it is hashed. North American and
 European accounts are both supported; the region is picked up at sign-in.
@@ -115,6 +119,8 @@ samples.
 | `operatingState` | off, humidifying, or idle (`suspend`: target reached, mist paused) |
 | `waterTank` | `wrong`: ok, empty (1 or 4), or "fault n" for other codes |
 | `waterLevel` | `waterlevel` %, on newer models that report it |
+| `useSinceCleaning` | `worktime`, hours since the tank was last cleaned (per hass-dreo) |
+| `filterLife` | `filtertime`, filter life % (per hass-dreo), on models that report it |
 | `setDisplay(on/off)`, `display` | `ledlevel` (0 off, 2 on) |
 | `setPanelSound(on/off)`, `panelSound` | `muteon` |
 | `setAmbientLight(on/off)`, `ambientLight` | `ambient_switch`, or `rgblevel` (0 off, 2 on) |
@@ -132,8 +138,8 @@ attributes.
 - Not in v1: oscillation angles and sweep width, head position, on/off timers,
   schedules, misting, temperature calibration offset, air purifiers, heaters
   and other Dreo devices; on humidifiers, the RGB humidity-indicator light
-  (DR-HHM015S), light colours and brightness levels, filter and cleaning
-  reminders.
+  (DR-HHM015S), light colours and brightness levels, resetting the filter and
+  cleaning counters.
 - Models not in the built-in table use their family's defaults (towers and
   circulators 1–9 with normal/natural/sleep/auto; ceiling fans 1–12 with
   normal/natural/sleep/reverse).

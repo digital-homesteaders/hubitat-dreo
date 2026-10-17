@@ -592,7 +592,9 @@ check("dreoEvents: DR-HHM001S sample state") {
     Map e = hEvents(HHM001S)
     assert json(e.remove("supportedModes")) == ["manual", "auto", "sleep"]
     assert e == [switch: "on", humidity: 47, targetHumidity: 60, mode: "auto", mistLevel: 6, maxMistLevel: 6,
-                 operatingState: "humidifying", waterTank: "ok", display: "on", panelSound: "on", ambientLight: "on"]
+                 operatingState: "humidifying", waterTank: "ok", display: "on", panelSound: "on", ambientLight: "on",
+                 useSinceCleaning: 0]
+    assert hEvents(HHM001S + [filtertime: 75]).filterLife == 75
 }
 
 check("dreoEvents: humidifier sleep target, paused, empty tank, off") {
