@@ -525,8 +525,8 @@ void commandFailed(String sn) {
 /**
  * The Hubitat events for a fan's merged Dreo state. Each event is a sendEvent
  * map; events with a `child` key ("light" or "ring") belong to that child.
- * `opts`: speedSteps (override, 0 = model default), ringHue/ringSaturation
- * (the ring child's current values).
+ * `opts`: speedSteps (override, 0 = model default), level (the fan's current
+ * speed percentage), ringHue/ringSaturation (the ring child's current values).
  */
 List dreoEvents(cd, Map s, Map opts = [:]) {
     Map p = profile(cd.getDataValue("model"), s, opts)
@@ -543,6 +543,11 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
     if (s.windlevel instanceof Number) {
         int level = s.windlevel as int
         ev << [name: "speedLevel", value: level]
+        // Keep a percentage picked in Hubitat (say 50% for step 5 of 9) while
+        // the fan stays on that step; otherwise show the step's own share.
+        if (opts?.level == null || stepForPercent(p, opts.level) != level) {
+            ev << [name: "level", value: percentForStep(p, level), unit: "%"]
+        }
         String speed = on == false ? "off" : (modeId == "auto" ? "auto" : speedNameFor(p, level))
         ev << [name: "speed", value: speed]
     } else if (on == false) {
@@ -661,6 +666,16 @@ List speedNames(int steps) {
 int levelForSpeed(int i, int min, int steps) {
     int n = speedNames(steps).size()
     return min + Math.max(0, (int) Math.round(((i + 1) * steps) / (double) n) - 1)
+}
+
+/** A fan step as a percentage of the top step, like Homey's fan speed. */
+int percentForStep(Map p, int step) {
+    return (int) Math.round(step * 100d / p.max)
+}
+
+/** A percentage as the nearest step the fan has. */
+int stepForPercent(Map p, def pct) {
+    return clamp((pct as double) * p.max / 100d, p.min, p.max)
 }
 
 /** The named speed covering a fan step: the first name whose step is at or above it. */
@@ -797,6 +812,9 @@ private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
             if (level <= 0) return power(false)
             if (level < p.min || level > p.max) throw new IllegalArgumentException("speed level must be ${p.min}-${p.max}")
             return wake(speedParams(p, s, level))
+        case "setLevel":
+            if ((a as double) <= 0) return power(false)
+            return wake(speedParams(p, s, stepForPercent(p, a)))
         case "setSpeed":
             String speed = a?.toString()
             if (speed == "off") return power(false)

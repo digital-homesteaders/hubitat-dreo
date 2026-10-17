@@ -118,6 +118,19 @@ check("fan command: sent once, shown straight away, cleared by the ack") {
     assert f.currentValue("mode") == "sleep"
 }
 
+check("setLevel: percent sets the step and the picked percentage stays") {
+    int from = conn().driver.callsNamed("ws.send").size()
+    FakeDevice f = child("dreo-SN1")
+    f.setLevel(50)
+    hub.settle()
+    assert sent(from)*.params == [[windlevel: 5]]  // sleep mode stays; only auto is left
+    ack("SN1")
+    ws([devicesn: "SN1", method: "report", reported: [windlevel: 5]])
+    assert f.currentValue("level") == 50 && f.currentValue("speedLevel") == 5
+    ws([devicesn: "SN1", method: "report", reported: [windlevel: 7]])
+    assert f.currentValue("level") == 78
+}
+
 check("bad command input: warning, nothing sent") {
     int from = conn().driver.callsNamed("ws.send").size()
     child("dreo-SN1").setMode("reverse")

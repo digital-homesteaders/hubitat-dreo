@@ -13,6 +13,7 @@ metadata {
         capability "Actuator"
         capability "Switch"
         capability "FanControl"
+        capability "SwitchLevel"
         capability "TemperatureMeasurement"
         capability "Refresh"
 
@@ -61,6 +62,11 @@ def on() { sendDreo("on") }
 def off() { sendDreo("off") }
 def setSpeed(speed) { sendDreo("setSpeed", [speed]) }
 def cycleSpeed() { sendDreo("cycleSpeed") }
+def setLevel(level, duration = null) {
+    // Show the percentage as picked; the app keeps it while the fan is on the matching step.
+    if (level != null && (level as double) > 0) emit([name: "level", value: Math.min(100, (int) Math.round(level as double)), unit: "%"])
+    sendDreo("setLevel", [level])
+}
 def setSpeedLevel(level) { sendDreo("setSpeedLevel", [level]) }
 def setMode(mode) { sendDreo("setMode", [mode]) }
 def setOscillation(value) { sendDreo("setOscillation", [value]) }
@@ -112,6 +118,7 @@ private Map opts() {
     def ring = getChildDevice("${device.deviceNetworkId}-ring")
     return [
         speedSteps: (settings.speedSteps ?: 0) as int,
+        level: device.currentValue("level"),
         ringHue: ring?.currentValue("hue"),
         ringSaturation: ring?.currentValue("saturation"),
     ]
