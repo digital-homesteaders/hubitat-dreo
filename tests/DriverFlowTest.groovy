@@ -274,6 +274,80 @@ check("speed-step preference re-maps named speeds") {
     assert f.currentValue("speed") == "medium-low"
 }
 
+check("humidifier: discovered with its limits, added with the humidifier driver") {
+    app.discoverDevices([list: [
+        [deviceId: "1", sn: "SN1", model: "DR-HPF008S", deviceName: "Office Fan", seriesName: "PolyFan 508S"],
+        [deviceId: "2", sn: "SN2", model: "DR-HCF007S", deviceName: "Bedroom Fan"],
+        [deviceId: "5", sn: "SN5", model: "DR-HHM001S", deviceName: "Nursery Humidifier", seriesName: "HM311S",
+         controlsConf: [schedule: [modes: [
+             [cmd: "mode", value: 1, controls: [[cmd: ["rhautolevel"], startValue: 30, endValue: 80]]],
+             [cmd: "mode", value: 0, controls: [[cmd: ["foglevel"], startValue: 0, validValue: 1, endValue: 6]]],
+         ]]]],
+    ]], [:])
+    app.discoverRooms(null, [:])
+    hub.settle()
+    assert app.state.discovered.SN5.limits == [humidityRange: "30-80", mistRange: "1-6"]
+    app.settings.selectedFans = ["SN1", "SN2", "SN5"]
+    app.updated()
+    hub.settle()
+    FakeDevice h = child("dreo-SN5")
+    assert h.driverName == "Dreo Humidifier"
+    assert h.displayName == "Nursery Humidifier"
+    assert h.data.subMap(["model", "kind", "humidityRange", "mistRange"]) ==
+        [model: "DR-HHM001S", kind: "humidifier", humidityRange: "30-80", mistRange: "1-6"]
+    app.mainPage()
+}
+
+check("humidifier: REST state and pushed reports become events") {
+    app.fanStateDone([mixed: [poweron: [state: true], mode: [state: 1], rh: [state: 47], rhautolevel: [state: 60],
+        rhsleeplevel: [state: 70], foglevel: [state: 6], wrong: [state: 0], ledlevel: [state: 2],
+        muteon: [state: false], rgblevel: [state: 2], suspend: [state: false], connected: [state: true]]], [sn: "SN5"])
+    hub.settle()
+    FakeDevice h = child("dreo-SN5")
+    assert h.currentValue("humidity") == 47 && h.currentValue("targetHumidity") == 60
+    assert h.currentValue("mode") == "auto" && h.currentValue("operatingState") == "humidifying"
+    assert h.currentValue("waterTank") == "ok" && h.currentValue("healthStatus") == "online"
+    ws([devicesn: "SN5", method: "control-report", reported: [rh: 55, suspend: true]])
+    assert h.currentValue("humidity") == 55 && h.currentValue("operatingState") == "idle"
+    ws([devicesn: "SN5", method: "report", reported: [wrong: 1]])
+    assert h.currentValue("waterTank") == "empty"
+    assert h.driver.log.at("info").any { it.contains("waterTank is empty") }
+}
+
+check("humidifier commands: sent, shown straight away, acked") {
+    int from = conn().driver.callsNamed("ws.send").size()
+    FakeDevice h = child("dreo-SN5")
+    h.setTargetHumidity(50)
+    hub.settle()
+    assert h.currentValue("targetHumidity") == 50
+    ack("SN5")
+    h.setMistLevel(3)
+    hub.settle()
+    assert h.currentValue("mode") == "manual" && h.currentValue("mistLevel") == 3
+    ack("SN5")
+    h.setMode("sleep")
+    hub.settle()
+    ack("SN5")
+    assert h.currentValue("targetHumidity") == 70  // sleep has its own target
+    h.setTargetHumidity(65)
+    hub.settle()
+    ack("SN5")
+    h.setDisplay("off")
+    hub.settle()
+    ack("SN5")
+    h.off()
+    hub.settle()
+    ack("SN5")
+    assert sent(from)*.params == [[rhautolevel: 50], [foglevel: 3, mode: 0], [mode: 2], [rhsleeplevel: 65],
+                                  [ledlevel: 0], [poweron: false]]
+    assert sent(from)*.devicesn.unique() == ["SN5"]
+    assert h.currentValue("switch") == "off" && h.currentValue("operatingState") == "off"
+    h.setTargetHumidity(90)  // above the HM311S's 80
+    hub.settle()
+    assert sent(from).size() == 6
+    assert app.log.at("warn").any { it.contains("target humidity must be 30-80") }
+}
+
 check("unticking a fan removes it") {
     app.settings.selectedFans = ["SN2"]
     app.updated()

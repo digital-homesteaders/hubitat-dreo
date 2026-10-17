@@ -1,14 +1,15 @@
 /**
- * Dreo Connect: Hubitat integration for Dreo cloud fans.
+ * Dreo Connect: Hubitat integration for Dreo cloud fans and humidifiers.
  *
- * The app holds the Dreo account, signs in, discovers fans and creates one
- * child device per fan. A "Dreo Cloud Connection" child device holds the
+ * The app holds the Dreo account, signs in, discovers devices and creates one
+ * child device per fan or humidifier. A "Dreo Cloud Connection" child device holds the
  * WebSocket (only drivers can open one), which carries pushed state reports
  * and outgoing commands for every fan on the account.
  *
  * All Dreo-specific mapping (speed steps, modes, oscillation, the ceiling-fan
- * power gate, light colours, temperature units) lives in this file as plain
- * functions of the fan's reported state, so the fan and light drivers stay thin.
+ * power gate, light colours, temperature units, humidifier modes and targets)
+ * lives in this file as plain functions of the device's reported state, so the
+ * fan, humidifier and light drivers stay thin.
  *
  * Protocol, model data and feature mappings are ported from hass-dreo
  * (https://github.com/JeffSteinbok/hass-dreo, MIT License; see LICENSE).
@@ -24,7 +25,7 @@ definition(
     name: "Dreo Connect",
     namespace: "dreo",
     author: "Digital Homesteaders",
-    description: "Control Dreo cloud fans (tower, circulator, ceiling) from Hubitat.",
+    description: "Control Dreo cloud fans (tower, circulator, ceiling) and humidifiers from Hubitat.",
     category: "Convenience",
     singleInstance: true,
     iconUrl: "",
@@ -65,6 +66,8 @@ preferences {
     swapped: [["normal", 1], ["auto", 2], ["sleep", 3], ["natural", 4], ["turbo", 5]],
     swappedCustom: [["normal", 1], ["auto", 2], ["sleep", 3], ["natural", 4], ["turbo", 5], ["custom", 6]],
     ceiling: [["normal", 1], ["natural", 2], ["sleep", 3], ["reverse", 4]],
+    // Humidifiers: manual mist level, auto (holds rhautolevel), sleep (holds rhsleeplevel).
+    humidifier: [["manual", 0], ["auto", 1], ["sleep", 2]],
 ]
 
 // Family defaults by model prefix. Unknown fans in a family use these.
@@ -73,6 +76,7 @@ preferences {
     "DR-HAF": [kind: "circulator", speed: [1, 9], modes: "basic"],
     "DR-HPF": [kind: "circulator", speed: [1, 9], modes: "basic"],
     "DR-HCF": [kind: "ceiling", speed: [1, 12], modes: "ceiling"],
+    "DR-HHM": [kind: "humidifier", modes: "humidifier"],
 ]
 
 // Per-model details, from hass-dreo's pydreo/models.py. `ring` is the light
@@ -127,6 +131,11 @@ preferences {
 // Ceiling light colortemp 0..100 spans 2700 K (warm) to 6500 K (cool).
 @Field static final int CT_WARM = 2700
 @Field static final int CT_COOL = 6500
+// Humidifier ranges when the device list's controlsConf doesn't give them (hass-dreo's defaults).
+@Field static final List HUM_TARGET_RANGE = [30, 90]
+@Field static final List HUM_MIST_RANGE = [1, 6]
+// Humidifier `wrong` codes meaning the tank is empty or off its base.
+@Field static final List HUM_TANK_EMPTY = [1, 4]
 
 // ---------------------------------------------------------------- pages
 
@@ -141,10 +150,12 @@ def mainPage() {
             if (state.status) paragraph "<b>Status:</b> ${state.status}"
         }
         if (settings.email && state.passwordHash) {
-            section("Fans") {
-                href "fansPage", title: "Choose fans", description: selectedSummary()
+            section("Devices") {
+                href "fansPage", title: "Choose devices", description: selectedSummary()
                 getFanDevices().each { cd ->
-                    paragraph "${cd.displayName}: ${cd.currentValue('switch') ?: '?'}, ${cd.currentValue('speed') ?: '?'} " +
+                    def what = cd.getDataValue("kind") == "humidifier"
+                        ? "${cd.currentValue('humidity') ?: '?'} % humidity" : cd.currentValue('speed') ?: '?'
+                    paragraph "${cd.displayName}: ${cd.currentValue('switch') ?: '?'}, ${what} " +
                         "(${cd.getDataValue('model')}, ${cd.currentValue('healthStatus') ?: 'unknown'})"
                 }
                 def conn = getConnection()
@@ -169,33 +180,33 @@ def fansPage() {
         startDiscovery()
         started = state.discovering as Long
     }
-    Map page = [name: "fansPage", title: "Choose fans"]
+    Map page = [name: "fansPage", title: "Choose devices"]
     if (started) page.refreshInterval = 2
     dynamicPage(page) {
         section {
             if (started) {
-                paragraph "Looking up fans on your Dreo account..."
+                paragraph "Looking up devices on your Dreo account..."
             } else if (state.discoverError) {
-                paragraph "Could not list fans: ${state.discoverError}"
+                paragraph "Could not list devices: ${state.discoverError}"
             }
             Map found = state.discovered ?: [:]
             if (found) {
                 Map options = found.collectEntries { sn, f ->
                     [(sn): "${f.name} (${f.series ?: f.model}${f.room ? ', ' + f.room : ''})"]
                 }.sort { it.value }
-                input "selectedFans", "enum", title: "Fans to add to Hubitat", options: options, multiple: true, required: false
-                paragraph "Fans you untick are removed from Hubitat when you press Done."
+                input "selectedFans", "enum", title: "Fans and humidifiers to add to Hubitat", options: options, multiple: true, required: false
+                paragraph "Devices you untick are removed from Hubitat when you press Done."
             } else if (!started && !state.discoverError) {
-                paragraph "No fans found on this Dreo account."
+                paragraph "No fans or humidifiers found on this Dreo account."
             }
-            if (state.unsupported) paragraph "Not supported (not a fan): ${state.unsupported.join(', ')}"
+            if (state.unsupported) paragraph "Not supported yet: ${state.unsupported.join(', ')}"
         }
     }
 }
 
 private String selectedSummary() {
     int n = (settings.selectedFans ?: []).size()
-    n ? "${n} fan${n == 1 ? '' : 's'} selected" : "Tap to pick fans"
+    n ? "${n} device${n == 1 ? '' : 's'} selected" : "Tap to pick fans and humidifiers"
 }
 
 /** Replace a freshly entered password with its MD5 hash. */
@@ -254,11 +265,12 @@ private void syncChildren() {
         if (getChildDevice(fanDni(sn))) return
         Map f = found[sn]
         if (!f) return
-        String driver = kindOf(f.model) == "ceiling" ? "Dreo Ceiling Fan" : "Dreo Fan"
+        String kind = kindOf(f.model)
+        String driver = kind == "ceiling" ? "Dreo Ceiling Fan" : kind == "humidifier" ? "Dreo Humidifier" : "Dreo Fan"
         try {
             // Data values go in with the device: its installed() runs inside addChildDevice.
             addChildDevice("dreo", driver, fanDni(sn), [name: f.series ?: f.model, label: f.name, isComponent: false,
-                data: [sn: sn, model: f.model]])
+                data: [sn: sn, model: f.model, kind: kind] + (f.limits ?: [:])])
             log.info "Dreo: added ${f.name} (${f.model})"
         } catch (e) {
             log.error "Dreo: could not add ${f.name}: ${e.message} (is the '${driver}' driver installed?)"
@@ -423,8 +435,10 @@ def discoverDevices(data, Map ctx) {
     Map found = [:]
     List unsupported = []
     (data.list ?: []).findAll { it.deviceId && it.sn }.each { d ->
-        if (kindOf(d.model)) {
+        String kind = kindOf(d.model)
+        if (kind) {
             found[d.sn] = [name: d.deviceName ?: d.model, model: d.model, series: d.seriesName]
+            if (kind == "humidifier") found[d.sn].limits = humidifierLimits(d.controlsConf)
         } else {
             unsupported << "${d.deviceName ?: d.model} (${d.model})"
         }
@@ -529,6 +543,7 @@ void commandFailed(String sn) {
  * (the ring child's current values).
  */
 List dreoEvents(cd, Map s, Map opts = [:]) {
+    if (kindOf(cd.getDataValue("model")) == "humidifier") return humidifierEvents(humidifierProfile(cd), s)
     Map p = profile(cd.getDataValue("model"), s, opts)
     List ev = []
     Boolean on = isOn(p, s)
@@ -581,10 +596,11 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
  * was sent). Light commands are prefixed "light." or "ring.".
  */
 Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
-    Map p = profile(cd.getDataValue("model"), s, opts)
+    boolean humidifier = kindOf(cd.getDataValue("model")) == "humidifier"
+    Map p = humidifier ? humidifierProfile(cd) : profile(cd.getDataValue("model"), s, opts)
     Map params
     try {
-        params = buildCommand(p, s, cmd, args ?: [], opts)
+        params = humidifier ? humidifierCommand(p, s, cmd, args ?: []) : buildCommand(p, s, cmd, args ?: [], opts)
     } catch (IllegalArgumentException e) {
         log.warn "Dreo: ${cd.displayName}: ${e.message}"
         return null
@@ -960,6 +976,141 @@ Map gateParams(Map s, Map params) {
     Map after = [:] + s + params
     if (s.poweron && !CEILING_LOADS.any { after[it] }) return params + [poweron: false]
     return params
+}
+
+// ---------------------------------------------------------------- humidifiers
+// Per hass-dreo's PyDreoHumidifier and the DR-HHM001S (HM311S) device list
+// and state samples in its tests.
+
+/**
+ * Target-humidity and mist-level ranges from a humidifier's controlsConf in
+ * the device list, as device data values ("30-80"). Missing ones are left out.
+ */
+Map humidifierLimits(def conf) {
+    Map out = [:]
+    if (!(conf instanceof Map)) return out
+    def hr = conf.humRange
+    if (hr instanceof Map && hr.controlMin instanceof Number && hr.controlMax instanceof Number) {
+        out.humidityRange = "${hr.controlMin}-${hr.controlMax}".toString()
+    }
+    def modes = conf.schedule instanceof Map ? conf.schedule.modes : null
+    (modes instanceof List ? modes : []).each { m ->
+        (m instanceof Map && m.controls instanceof List ? m.controls : []).each { c ->
+            if (!(c instanceof Map) || !(c.endValue instanceof Number)) return
+            List cmds = c.cmd instanceof List ? c.cmd : [c.cmd]
+            if ("rhautolevel" in cmds && !out.humidityRange && c.startValue instanceof Number) {
+                out.humidityRange = "${c.startValue}-${c.endValue}".toString()
+            }
+            if ("foglevel" in cmds) {
+                // startValue 0 is "off"; validValue is the lowest real level.
+                def lo = c.validValue instanceof Number ? c.validValue : c.startValue instanceof Number ? c.startValue : 1
+                out.mistRange = "${Math.max(1, lo as int)}-${c.endValue}".toString()
+            }
+        }
+    }
+    return out
+}
+
+private List rangeOf(String v, List dflt) {
+    if (!v) return dflt
+    def m = v =~ /^(\d+)-(\d+)$/
+    return m.matches() ? [m.group(1) as int, m.group(2) as int] : dflt
+}
+
+Map humidifierProfile(cd) {
+    return [
+        kind: "humidifier", modes: MODE_LISTS.humidifier, modeKey: "mode", powerKey: "poweron",
+        target: rangeOf(cd.getDataValue("humidityRange"), HUM_TARGET_RANGE),
+        mist: rangeOf(cd.getDataValue("mistRange"), HUM_MIST_RANGE),
+    ]
+}
+
+/** The target that applies now: sleep mode has its own (rhsleeplevel) where the model reports one. */
+private String targetKey(Map p, Map s) {
+    return modeOf(p, s) == "sleep" && s.containsKey("rhsleeplevel") ? "rhsleeplevel" : "rhautolevel"
+}
+
+List humidifierEvents(Map p, Map s) {
+    List ev = []
+    Boolean on = s.containsKey("poweron") ? s.poweron as boolean : null
+    String modeId = modeOf(p, s)
+    if (on != null) ev << [name: "switch", value: on ? "on" : "off"]
+    if (s.rh instanceof Number) ev << [name: "humidity", value: s.rh as int, unit: "%"]
+    def target = s[targetKey(p, s)]
+    if (target instanceof Number) ev << [name: "targetHumidity", value: target as int, unit: "%"]
+    ev << [name: "supportedModes", value: JsonOutput.toJson(p.modes.collect { it[0] })]
+    if (modeId) ev << [name: "mode", value: modeId]
+    if (s.foglevel instanceof Number) ev << [name: "mistLevel", value: s.foglevel as int]
+    int mistMax = Math.max(p.mist[1] as int, s.foglevel instanceof Number ? s.foglevel as int : 0)
+    ev << [name: "maxMistLevel", value: mistMax]
+    if (on != null) {
+        // suspend: the target is reached and the mist is paused.
+        ev << [name: "operatingState", value: !on ? "off" : s.suspend == true ? "idle" : "humidifying"]
+    }
+    if (s.wrong instanceof Number) {
+        int w = s.wrong as int
+        ev << [name: "waterTank", value: w == 0 ? "ok" : w in HUM_TANK_EMPTY ? "empty" : "fault ${w}".toString()]
+    }
+    if (s.waterlevel instanceof Number) ev << [name: "waterLevel", value: s.waterlevel as int, unit: "%"]
+    if (s.ledlevel instanceof Number) ev << [name: "display", value: (s.ledlevel as int) > 0 ? "on" : "off"]
+    if (s.containsKey("muteon")) ev << [name: "panelSound", value: s.muteon ? "off" : "on"]
+    if (s.containsKey("ambient_switch")) ev << [name: "ambientLight", value: s.ambient_switch ? "on" : "off"]
+    else if (s.rgblevel instanceof Number) ev << [name: "ambientLight", value: (s.rgblevel as int) > 0 ? "on" : "off"]
+    return ev
+}
+
+private int intArg(def v, String what) {
+    try {
+        return Math.round(v as double) as int
+    } catch (e) {
+        throw new IllegalArgumentException("${what} must be a number, not ${v}")
+    }
+}
+
+/** Params for a humidifier command. Throws IllegalArgumentException for bad input. */
+Map humidifierCommand(Map p, Map s, String cmd, List args) {
+    def a = args ? args[0] : null
+    boolean on = s.poweron as boolean
+    // Mode, target or mist changes on a humidifier that is off also switch it on.
+    Closure<Map> wake = { Map m -> on ? m : [poweron: true] + m }
+    String modeId = modeOf(p, s)
+    Closure<Integer> modeValue = { String id -> p.modes.find { it[0] == id }[1] as int }
+
+    switch (cmd) {
+        case "on": return [poweron: true]
+        case "off": return [poweron: false]
+        case "setMode":
+            def mode = p.modes.find { it[0] == a?.toString() }
+            if (!mode) throw new IllegalArgumentException("unsupported mode ${a}; this humidifier has ${p.modes.collect { it[0] }}")
+            return wake([mode: mode[1]])
+        case "setTargetHumidity":
+            int t = intArg(a, "target humidity")
+            if (t < p.target[0] || t > p.target[1]) throw new IllegalArgumentException("target humidity must be ${p.target[0]}-${p.target[1]} %")
+            Map params = [(targetKey(p, s)): t]
+            // A target only applies in auto or sleep; from manual, go to auto.
+            if (modeId == "manual") params.mode = modeValue("auto")
+            return wake(params)
+        case "setMistLevel":
+            int level = intArg(a, "mist level")
+            if (level <= 0) return [poweron: false]
+            if (level < p.mist[0] || level > p.mist[1]) throw new IllegalArgumentException("mist level must be ${p.mist[0]}-${p.mist[1]}")
+            Map params = [foglevel: level]
+            // A fixed mist level means manual control.
+            if (modeId && modeId != "manual") params.mode = modeValue("manual")
+            return wake(params)
+        case "setDisplay":
+            if (!s.containsKey("ledlevel")) throw new IllegalArgumentException("this humidifier has no display setting")
+            return [ledlevel: onOffArg(a, "display") ? 2 : 0]
+        case "setPanelSound":
+            if (!s.containsKey("muteon")) throw new IllegalArgumentException("this humidifier has no panel sound setting")
+            return [muteon: !onOffArg(a, "panel sound")]
+        case "setAmbientLight":
+            boolean lit = onOffArg(a, "ambient light")
+            if (s.containsKey("ambient_switch")) return [ambient_switch: lit]
+            if (s.containsKey("rgblevel")) return [rgblevel: lit ? 2 : 0]
+            throw new IllegalArgumentException("this humidifier has no ambient light")
+    }
+    throw new IllegalArgumentException("unknown command ${cmd}")
 }
 
 private void logDebug(String msg) {

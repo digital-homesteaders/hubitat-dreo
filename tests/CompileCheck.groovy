@@ -36,6 +36,7 @@ files.each { File f ->
 Map<String, List<String>> parents = [
     "dreo-fan.groovy": ["apps/dreo-connect.groovy"],
     "dreo-ceiling-fan.groovy": ["apps/dreo-connect.groovy"],
+    "dreo-humidifier.groovy": ["apps/dreo-connect.groovy"],
     "dreo-cloud-connection.groovy": ["apps/dreo-connect.groovy"],
     "dreo-light-ring.groovy": ["drivers/dreo-fan.groovy", "drivers/dreo-ceiling-fan.groovy"],
     "dreo-ceiling-light.groovy": ["drivers/dreo-ceiling-fan.groovy"],
@@ -61,7 +62,7 @@ new File(root, "drivers").listFiles().findAll { it.name.endsWith(".groovy") }.ea
 check("child device methods called by the app exist and are public") {
     String app = new File(root, "apps/dreo-connect.groovy").text
     Map<String, List<String>> drivers = [
-        cd: ["drivers/dreo-fan.groovy", "drivers/dreo-ceiling-fan.groovy"],
+        cd: ["drivers/dreo-fan.groovy", "drivers/dreo-ceiling-fan.groovy", "drivers/dreo-humidifier.groovy"],
         conn: ["drivers/dreo-cloud-connection.groovy"],
     ]
     // Hubitat's own device methods, not the driver's.

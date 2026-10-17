@@ -1,7 +1,8 @@
 # Dreo Connect for Hubitat
 
-Control Dreo cloud fans from a Hubitat Elevation hub: tower fans, air
-circulators and ceiling fans, including ceiling lights and light rings.
+Control Dreo cloud fans and humidifiers from a Hubitat Elevation hub: tower
+fans, air circulators and ceiling fans, including ceiling lights and light
+rings, and DR-HHM humidifiers.
 
 > **Status: v0.1, not yet tested on a hub.** The Dreo protocol is the one
 > verified on real fans in the author's Homey Dreo app (itself a port of
@@ -11,14 +12,15 @@ circulators and ceiling fans, including ceiling lights and light rings.
 
 ## How it works
 
-- **Dreo Connect** (app) holds your Dreo account, signs in, lists the fans on
-  the account and creates one device per fan you pick. All Dreo-specific
+- **Dreo Connect** (app) holds your Dreo account, signs in, lists the fans and
+  humidifiers on the account and creates one device for each one you pick. All Dreo-specific
   mapping (speeds, modes, oscillation, lights, temperature) lives in the app.
 - **Dreo Cloud Connection** (device) holds the single WebSocket to Dreo's
   cloud. Hubitat only lets drivers open WebSockets, which is why this is a
   device. It receives live state from every fan and sends commands one at a
   time, waiting for Dreo's acknowledgement.
-- **Dreo Fan** (tower fans, air circulators) and **Dreo Ceiling Fan** devices.
+- **Dreo Fan** (tower fans, air circulators), **Dreo Ceiling Fan** and
+  **Dreo Humidifier** devices.
 - **Dreo Ceiling Light** and **Dreo Light Ring** child devices, created
   automatically when a fan reports a light or a light ring, so dashboards,
   Room Lighting and voice assistants see them as ordinary lights.
@@ -40,10 +42,11 @@ needs its `GITHUB_OWNER` placeholders replaced.
 1. **Drivers Code → New Driver**: paste and save each file in `drivers/`:
    `dreo-cloud-connection.groovy`, `dreo-fan.groovy`,
    `dreo-ceiling-fan.groovy`, `dreo-ceiling-light.groovy`,
-   `dreo-light-ring.groovy`.
+   `dreo-light-ring.groovy`, `dreo-humidifier.groovy`.
 2. **Apps Code → New App**: paste and save `apps/dreo-connect.groovy`.
 3. **Apps → Add User App → Dreo Connect**. Enter your Dreo email and
-   password, open **Choose fans**, tick the fans you want, then press **Done**.
+   password, open **Choose devices**, tick the fans and humidifiers you want,
+   then press **Done**.
 
 Only an MD5 hash of the password is stored (that is what Dreo's sign-in
 expects); the password field is cleared once it is hashed. North American and
@@ -97,12 +100,40 @@ DR-HPF008S), ColorControl (`atmcolor`, 24-bit RGB) and LightEffects
 (1 constant, 2 circle, 3 breath). Changing colour, brightness or effect on a
 dark ring turns it on, like the Dreo app.
 
+### Dreo Humidifier (DR-HHM)
+
+Mapped from hass-dreo's `PyDreoHumidifier` and its DR-HHM001S (HM311S)
+samples.
+
+| Hubitat | Dreo |
+| --- | --- |
+| Switch | `poweron` |
+| RelativeHumidityMeasurement `humidity` | `rh` |
+| `setTargetHumidity(%)`, `targetHumidity` | `rhautolevel`, or `rhsleeplevel` in Sleep mode. Setting a target in Manual mode switches to Auto. |
+| `setMode(manual/auto/sleep)`, `mode`, `supportedModes` | `mode` 0 / 1 / 2 |
+| `setMistLevel(n)`, `mistLevel`, `maxMistLevel` | `foglevel`, 1..N; switches to Manual mode; 0 turns it off |
+| `operatingState` | off, humidifying, or idle (`suspend`: target reached, mist paused) |
+| `waterTank` | `wrong`: ok, empty (1 or 4), or "fault n" for other codes |
+| `waterLevel` | `waterlevel` %, on newer models that report it |
+| `setDisplay(on/off)`, `display` | `ledlevel` (0 off, 2 on) |
+| `setPanelSound(on/off)`, `panelSound` | `muteon` |
+| `setAmbientLight(on/off)`, `ambientLight` | `ambient_switch`, or `rgblevel` (0 off, 2 on) |
+| `healthStatus` | online/offline |
+
+The target-humidity and mist ranges come from the device list Dreo sends at
+discovery (30–80 % and mist 1–6 on the HM311S), falling back to 30–90 % and
+1–6. Mode, target or mist changes on a humidifier that is off also switch it on.
+Hubitat has no humidifier capability, so rules use the custom commands and
+attributes.
+
 ## Limitations
 
 - Needs Dreo's cloud; there is no local control.
 - Not in v1: oscillation angles and sweep width, head position, on/off timers,
   schedules, misting, temperature calibration offset, air purifiers, heaters
-  and other Dreo devices.
+  and other Dreo devices; on humidifiers, the RGB humidity-indicator light
+  (DR-HHM015S), light colours and brightness levels, filter and cleaning
+  reminders.
 - Models not in the built-in table use their family's defaults (towers and
   circulators 1–9 with normal/natural/sleep/auto; ceiling fans 1–12 with
   normal/natural/sleep/reverse).
@@ -128,13 +159,15 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   power gate (cases from hass-dreo's `PyDreoCeilingFan`); temperature with
   `tempunit` 0/1, the >50 rule, offsets and °F/°C hubs; RGB/hue round-trips;
   and the events for sample DR-HAF001S, DR-HPF008S (with light ring) and
-  DR-HCF ceiling fan states.
+  DR-HCF ceiling fan states; humidifier limits from `controlsConf`, events for
+  the DR-HHM001S sample state and its variants (sleep target, paused, empty
+  tank), and every humidifier command's params.
 - **DriverFlowTest**: the app and real drivers together, with state passed
   through JSON as on a hub: discovery and rooms, child creation and removal,
   WebSocket open/reports/acks, the one-at-a-time command queue, retries and
   reconnect after a missing ack, light ring and ceiling light children, the
-  gate on a real command, online/offline, REST refresh and the speed-step
-  preference.
+  gate on a real command, online/offline, REST refresh, the speed-step
+  preference, and a humidifier from discovery through reports and commands.
 
 To run them, get a JDK and Groovy 2.4 once (downloaded into the git-ignored
 `.tools/`; nothing is installed system-wide; or have `java` and `groovy` on
@@ -159,7 +192,7 @@ itself still needs checking.
    `java.security.MessageDigest`).
 3. Async sign-in against Dreo, the EU region redirect, and the 30-minute
    back-off after a wrong password.
-4. **Choose fans** page: the page auto-refresh during discovery, how it looks,
+4. **Choose devices** page: the page auto-refresh during discovery, how it looks,
    and whether it works before the app's first **Done**.
 5. Real WebSocket behaviour: `pingInterval`, the status strings Hubitat
    actually sends, reconnect after a hub reboot (Initialize), and whether Dreo
@@ -172,6 +205,10 @@ itself still needs checking.
    effects.
 8. Ceiling fan (when it arrives): the power gate and light child on the real
    fan.
+9. Humidifier (DR-HHM001S): the real state keys and `controlsConf` match the
+   hass-dreo samples; target humidity in Auto and Sleep, mist levels 1–6,
+   display, panel sound, ambient light; what `wrong` reports with the tank
+   lifted off.
 
 ## Credits and licence
 

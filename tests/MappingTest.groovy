@@ -541,4 +541,122 @@ check("dreoEvents: speed-step override and reported step above the table") {
     assert e2.maxSpeedLevel == 6 && json(e2.supportedFanSpeeds).size() == 5 + 3
 }
 
+// ---------------------------------------------------------------- humidifiers
+
+// A humidifier device as the driver passes it, with data values from discovery.
+FakeDevice hum(String model = "DR-HHM001S", Map limits = [humidityRange: "30-80", mistRange: "1-6"]) {
+    new FakeDevice(id: 5, deviceNetworkId: "dreo-SN5", name: model, data: [model: model, sn: "SN5", kind: "humidifier"] + limits)
+}
+Map hEvents(Map s, FakeDevice d = hum()) {
+    Map out = [:]
+    app.dreoEvents(d, s).each { e -> assert !out.containsKey(e.name); out[e.name] = e.value }
+    return out
+}
+Map hCmd(Map s, String name, List args = [], FakeDevice d = hum()) {
+    app.humidifierCommand(app.humidifierProfile(d), s, name, args)
+}
+
+// DR-HHM001S (HM311S) state, from hass-dreo's get_device_state_HHM001S_1.json.
+@Field Map HHM001S = [poweron: true, mode: 1, rh: 47, rhautolevel: 60, rhsleeplevel: 70, foglevel: 6,
+    wrong: 0, ledlevel: 2, muteon: false, rgblevel: 2, suspend: false, worktime: 0, scheon: false]
+
+check("humidifiers are discovered as their own kind") {
+    assert app.kindOf("DR-HHM001S") == "humidifier"
+    assert app.kindOf("DR-HHM003S") == "humidifier"
+    assert app.kindOf("DR-HAP001S") == null
+}
+
+check("humidifierLimits: from the HHM001S schedule controls, and humRange first") {
+    Map conf = [schedule: [modes: [
+        [title: "device_control_mode_auto", cmd: "mode", value: 1,
+         controls: [[type: 0, cmd: ["rhautolevel"], startValue: 30, endValue: 80]]],
+        [title: "device_control_mode_manual", cmd: "mode", value: 0,
+         controls: [[type: 1, cmd: ["foglevel"], startValue: 0, validValue: 1, endValue: 6]]],
+        [title: "device_control_mode_sleep", cmd: "mode", value: 2, controls: []],
+    ]]]
+    assert app.humidifierLimits(conf) == [humidityRange: "30-80", mistRange: "1-6"]
+    assert app.humidifierLimits(conf + [humRange: [controlMin: 35, controlMax: 85]]).humidityRange == "35-85"
+    assert app.humidifierLimits(null) == [:]
+    assert app.humidifierLimits([schedule: [modes: "junk"]]) == [:]
+}
+
+check("humidifierProfile: data values, else defaults") {
+    Map p = app.humidifierProfile(hum())
+    assert p.target == [30, 80] && p.mist == [1, 6]
+    Map d = app.humidifierProfile(hum("DR-HHM003S", [:]))
+    assert d.target == [30, 90] && d.mist == [1, 6]
+    assert d.modes*.get(0) == ["manual", "auto", "sleep"]
+}
+
+check("dreoEvents: DR-HHM001S sample state") {
+    Map e = hEvents(HHM001S)
+    assert json(e.remove("supportedModes")) == ["manual", "auto", "sleep"]
+    assert e == [switch: "on", humidity: 47, targetHumidity: 60, mode: "auto", mistLevel: 6, maxMistLevel: 6,
+                 operatingState: "humidifying", waterTank: "ok", display: "on", panelSound: "on", ambientLight: "on"]
+}
+
+check("dreoEvents: humidifier sleep target, paused, empty tank, off") {
+    assert hEvents(HHM001S + [mode: 2]).targetHumidity == 70
+    assert hEvents(HHM001S + [mode: 0]).subMap(["mode", "targetHumidity"]) == [mode: "manual", targetHumidity: 60]
+    assert hEvents(HHM001S + [suspend: true]).operatingState == "idle"
+    assert hEvents(HHM001S + [poweron: false]).subMap(["switch", "operatingState"]) == [switch: "off", operatingState: "off"]
+    assert hEvents(HHM001S + [wrong: 1]).waterTank == "empty"
+    assert hEvents(HHM001S + [wrong: 4]).waterTank == "empty"
+    assert hEvents(HHM001S + [wrong: 7]).waterTank == "fault 7"
+    assert hEvents(HHM001S + [ledlevel: 0, muteon: true, rgblevel: 0]).subMap(["display", "panelSound", "ambientLight"]) ==
+        [display: "off", panelSound: "off", ambientLight: "off"]
+    // Newer models: water level %, ambient_switch over rgblevel.
+    Map n = hEvents([poweron: true, waterlevel: 40, ambient_switch: false, rgblevel: 2])
+    assert n.waterLevel == 40 && n.ambientLight == "off"
+    // A reported mist level above the range widens it.
+    assert hEvents([foglevel: 8]).maxMistLevel == 8
+    // Nothing known: no switch, humidity or state events.
+    Map none = hEvents([:])
+    assert none.keySet() == ["supportedModes", "maxMistLevel"] as Set
+}
+
+check("humidifierCommand: power and mode") {
+    assert hCmd(HHM001S, "on") == [poweron: true]
+    assert hCmd(HHM001S, "off") == [poweron: false]
+    assert hCmd(HHM001S, "setMode", ["sleep"]) == [mode: 2]
+    assert hCmd(HHM001S + [poweron: false], "setMode", ["manual"]) == [poweron: true, mode: 0]
+    throwsIAE { hCmd(HHM001S, "setMode", ["turbo"]) }
+    throwsIAE { hCmd(HHM001S, "setSpeed", ["low"]) }
+}
+
+check("humidifierCommand: target humidity follows the mode") {
+    assert hCmd(HHM001S, "setTargetHumidity", [55]) == [rhautolevel: 55]
+    assert hCmd(HHM001S, "setTargetHumidity", ["45"]) == [rhautolevel: 45]
+    assert hCmd(HHM001S + [mode: 2], "setTargetHumidity", [65]) == [rhsleeplevel: 65]
+    // Sleep on a model without its own sleep target sets the auto one.
+    assert hCmd(HHM001S.findAll { it.key != "rhsleeplevel" } + [mode: 2], "setTargetHumidity", [65]) == [rhautolevel: 65]
+    // Manual has no target: go to auto.
+    assert hCmd(HHM001S + [mode: 0], "setTargetHumidity", [50]) == [rhautolevel: 50, mode: 1]
+    assert hCmd(HHM001S + [poweron: false], "setTargetHumidity", [50]) == [poweron: true, rhautolevel: 50]
+    throwsIAE { hCmd(HHM001S, "setTargetHumidity", [85]) }   // HHM001S tops out at 80
+    throwsIAE { hCmd(HHM001S, "setTargetHumidity", [25]) }
+    throwsIAE { hCmd(HHM001S, "setTargetHumidity", ["lots"]) }
+    assert hCmd(HHM001S, "setTargetHumidity", [85], hum("DR-HHM003S", [:])) == [rhautolevel: 85]
+}
+
+check("humidifierCommand: mist level goes to manual") {
+    assert hCmd(HHM001S, "setMistLevel", [3]) == [foglevel: 3, mode: 0]
+    assert hCmd(HHM001S + [mode: 0], "setMistLevel", [6]) == [foglevel: 6]
+    assert hCmd(HHM001S + [mode: 0, poweron: false], "setMistLevel", [2]) == [poweron: true, foglevel: 2]
+    assert hCmd(HHM001S, "setMistLevel", [0]) == [poweron: false]
+    throwsIAE { hCmd(HHM001S, "setMistLevel", [7]) }
+}
+
+check("humidifierCommand: display, panel sound, ambient light") {
+    assert hCmd(HHM001S, "setDisplay", ["off"]) == [ledlevel: 0]
+    assert hCmd(HHM001S, "setDisplay", ["on"]) == [ledlevel: 2]
+    assert hCmd(HHM001S, "setPanelSound", ["off"]) == [muteon: true]
+    assert hCmd(HHM001S, "setAmbientLight", ["off"]) == [rgblevel: 0]
+    assert hCmd([ambient_switch: false, rgblevel: 0], "setAmbientLight", ["on"]) == [ambient_switch: true]
+    throwsIAE { hCmd([:], "setDisplay", ["on"]) }
+    throwsIAE { hCmd([:], "setPanelSound", ["on"]) }
+    throwsIAE { hCmd([:], "setAmbientLight", ["on"]) }
+    throwsIAE { hCmd(HHM001S, "setDisplay", ["auto"]) }
+}
+
 Check.finish()

@@ -53,6 +53,13 @@
       "namespace": "dreo",
       "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-light-ring.groovy",
       "required": true
+    },
+    {
+      "id": "90505aa0-5ffc-4da8-829c-0158e31129bd",
+      "name": "Dreo Humidifier",
+      "namespace": "dreo",
+      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-humidifier.groovy",
+      "required": true
     }
   ]
 }
