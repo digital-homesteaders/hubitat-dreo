@@ -93,7 +93,10 @@ private void applyState() {
 }
 
 private void emit(Map e) {
-    if (txtEnable && device.currentValue(e.name)?.toString() != e.value?.toString() && !(e.name in ["supportedModes", "maxMistLevel"])) {
+    // Most of each report is unchanged: skip those values rather than send them.
+    boolean same = device.currentValue(e.name)?.toString() == e.value?.toString()
+    if (same && !e.isStateChange) return
+    if (txtEnable && !same && !(e.name in ["supportedModes", "maxMistLevel"])) {
         e.descriptionText = "${device.displayName} ${e.name} is ${e.value}${e.unit ?: ''}"
         log.info e.descriptionText
     }

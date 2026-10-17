@@ -20,6 +20,7 @@
 import groovy.json.JsonOutput
 import groovy.transform.Field
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 definition(
     name: "Dreo Connect",
@@ -49,6 +50,20 @@ preferences {
 @Field static final long AUTH_RETRY_MS = 30 * 60 * 1000L
 // A discovery still running after this long has failed (e.g. sign-in failed).
 @Field static final long DISCOVERY_TIMEOUT_MS = 45 * 1000L
+
+// Sign-in bookkeeping shared by every execution of this app, keyed by app id.
+// state is read once per execution, so concurrent callbacks (one per fan
+// after a token expires) can't see each other's changes there: this map lets
+// them share one sign-in and the token it produced.
+@Field static final ConcurrentHashMap<Long, Map> AUTH = new ConcurrentHashMap<>()
+// A sign-in older than this is assumed lost and may be started again.
+@Field static final long LOGIN_STALE_MS = 60 * 1000L
+
+// Device-list fields the raw dump keeps (model data, nothing personal).
+@Field static final List RAW_DEVICE_KEYS = ["model", "series", "seriesName", "productId", "productName", "type", "brand", "color", "controlsConf", "mainConf"]
+
+// State keys the raw dump leaves out: network identifiers and anything secret-looking.
+@Field static final String RAW_PRIVATE_STATE = /(?i).*(mac|ssid|ipaddr|password|token|secret).*|ip|.*_ip/
 
 @Field static final String PATH_LOGIN = "/api/oauth/login"
 @Field static final String PATH_DEVICES = "/api/v2/user-device/device/list"
@@ -217,14 +232,14 @@ private String selectedSummary() {
 private void hashPasswordSetting() {
     if (settings.email && settings.email != state.emailUsed) {
         state.emailUsed = settings.email
-        state.remove("token")
+        dropToken()
         state.remove("authFailedAt")
         state.remove("discoveredAt")
     }
     if (settings.password) {
         state.passwordHash = md5(settings.password as String)
         app.removeSetting("password")
-        state.remove("token")
+        dropToken()
         state.remove("authFailedAt")
         state.remove("discoveredAt")
         state.status = "Password saved"
@@ -303,24 +318,54 @@ private def fanBySn(String sn) { getChildDevice(fanDni(sn)) }
 
 // ---------------------------------------------------------------- REST
 
+private Map auth() {
+    Long id = app.id as Long
+    AUTH.putIfAbsent(id, [:])
+    return AUTH.get(id)
+}
+
+/** The newest access token, from this execution's state or another's sign-in. */
+private String currentToken() {
+    Map a = auth()
+    synchronized (a) {
+        if (a.tokenAt && (a.tokenAt as Long) > ((state.tokenAt ?: 0) as Long)) {
+            state.token = a.token
+            state.tokenAt = a.tokenAt
+        }
+    }
+    return state.token
+}
+
+private Long currentTokenAt() {
+    currentToken()
+    return state.tokenAt as Long
+}
+
+private void dropToken() {
+    state.remove("token")
+    Map a = auth()
+    synchronized (a) { a.remove("token"); a.remove("tokenAt") }
+}
+
 private String apiBase(String region = null) {
     "https://app-api-${REGION_HOST[region ?: state.region ?: 'NA'] ?: 'us'}.dreo-tech.com"
 }
 
 private Map apiHeaders() {
     Map h = [ua: "dreo/2.8.2", lang: "en", "User-Agent": "okhttp/4.9.1"]
-    if (state.token) h.Authorization = "Bearer ${state.token}"
+    String token = currentToken()
+    if (token) h.Authorization = "Bearer ${token}"
     return h
 }
 
 /** GET a Dreo API path; calls `callback(data, cbData)` with data = null on failure. */
 private void apiGet(String path, Map query, String callback, Map cbData = [:], boolean retried = false) {
     Map req = [path: path, query: query ?: [:], cb: callback, data: cbData, retried: retried]
-    if (!state.token) {
+    if (!currentToken()) {
         login("apiReplay", req)
         return
     }
-    req.tokenAt = state.tokenAt
+    req.tokenAt = currentTokenAt()
     Map params = [
         uri: apiBase(), path: path, query: req.query + [timestamp: now()],
         headers: apiHeaders(), contentType: "application/json", timeout: 30,
@@ -336,11 +381,11 @@ def apiReplay(Map req) {
 def apiGetDone(resp, Map req) {
     if (resp.status == 401 && !req.retried) {
         // Sign in again, unless another request already replaced the token.
-        if (state.token && state.tokenAt != req.tokenAt) {
+        if (currentToken() && currentTokenAt() != req.tokenAt) {
             apiReplay(req)
         } else {
             log.info "Dreo: ${req.path} returned 401, signing in again"
-            state.remove("token")
+            dropToken()
             login("apiReplay", req)
         }
         return
@@ -367,7 +412,10 @@ private String errorText(resp) {
     try { return resp.hasError() ? resp.getErrorMessage() : null } catch (e) { return null }
 }
 
-/** Sign in, then call `then(thenData)`. */
+/**
+ * Sign in, then call `then(thenData)`. Callers arriving while a sign-in is
+ * already under way wait for that one instead of starting their own.
+ */
 private void login(String then, Map thenData, String region = null, int depth = 0) {
     if (!settings.email || !state.passwordHash) {
         state.status = "Enter your Dreo email and password"
@@ -376,6 +424,21 @@ private void login(String then, Map thenData, String region = null, int depth = 
     if (state.authFailedAt && now() - (state.authFailedAt as Long) < AUTH_RETRY_MS) {
         logDebug "Sign-in skipped: Dreo rejected the credentials recently"
         return
+    }
+    if (depth == 0) {
+        Map a = auth()
+        synchronized (a) {
+            boolean running = a.loginAt && now() - (a.loginAt as Long) < LOGIN_STALE_MS
+            if (!running) {
+                a.loginAt = now()
+                a.waiters = []
+            }
+            if (then) a.waiters << [then: then, thenData: thenData ?: [:]]
+            if (running) {
+                logDebug "Sign-in already under way; waiting for it"
+                return
+            }
+        }
     }
     String r = region ?: state.region ?: "NA"
     Map body = [
@@ -390,7 +453,18 @@ private void login(String then, Map thenData, String region = null, int depth = 
         body: body, timeout: 30,
     ]
     logDebug "Signing in (${r})"
-    asynchttpPost("loginDone", params, [then: then, thenData: thenData, region: r, depth: depth])
+    asynchttpPost("loginDone", params, [region: r, depth: depth])
+}
+
+/** End the sign-in under way and return who was waiting for it. */
+private List finishLogin() {
+    Map a = auth()
+    synchronized (a) {
+        List w = a.waiters ?: []
+        a.remove("loginAt")
+        a.remove("waiters")
+        return w
+    }
 }
 
 def loginDone(resp, Map ctx) {
@@ -400,26 +474,33 @@ def loginDone(resp, Map ctx) {
         state.authFailedAt = now()
         state.status = "Dreo rejected the email or password (${json.msg ?: json.code}). Will retry in 30 minutes, or enter the password again."
         log.warn "Dreo: ${state.status}"
+        finishLogin()
         return
     }
     if (resp.status != 200 || !json?.data?.access_token) {
         state.status = "Sign-in failed: HTTP ${resp.status} ${errorText(resp) ?: ''}".trim()
         log.warn "Dreo: ${state.status}"
+        finishLogin()
         return
     }
     String accountRegion = json.data.region
     if (REGION_HOST[accountRegion] && accountRegion != ctx.region && ctx.depth == 0) {
         log.info "Dreo: account is in region ${accountRegion}, signing in there"
-        login(ctx.then, ctx.thenData, accountRegion, 1)
+        login(null, null, accountRegion, 1)
         return
     }
     state.region = ctx.region
     state.token = json.data.access_token
     state.tokenAt = now()
+    Map a = auth()
+    synchronized (a) {
+        a.token = state.token
+        a.tokenAt = state.tokenAt
+    }
     state.remove("authFailedAt")
     state.status = "Signed in (${ctx.region == 'EU' ? 'Europe' : 'North America'})"
     log.info "Dreo: ${state.status}"
-    if (ctx.then) "${ctx.then}"(ctx.thenData ?: [:])
+    finishLogin().each { Map w -> "${w.then}"(w.thenData ?: [:]) }
 }
 
 // ---------------------------------------------------------------- discovery
@@ -487,9 +568,10 @@ def appButtonHandler(String btn) {
 def dumpDevices(data, Map ctx) {
     if (data == null) return
     (data.list ?: []).each { d ->
-        // The device list holds no secrets except mac addresses, which are left out.
-        Map entry = d.findAll { k, v -> !(k in ["mac", "resourcesConf"]) }
-        log.info "Dreo raw device ${d.model} ${d.sn}: ${JsonOutput.toJson(entry)}"
+        // Only what describes the model: the entry also names the owner, home
+        // and rooms, and people paste these logs into public threads.
+        Map entry = d.findAll { k, v -> k in RAW_DEVICE_KEYS }
+        log.info "Dreo raw device ${d.model} ${shortSn(d.sn)}: ${JsonOutput.toJson(entry)}"
         if (d.sn) apiGet(PATH_STATE, [deviceSn: d.sn], "dumpState", [sn: d.sn, model: d.model])
     }
 }
@@ -498,9 +580,15 @@ def dumpState(data, Map ctx) {
     if (data == null) return
     Map flat = new TreeMap()
     (data.mixed ?: [:]).each { k, v ->
-        if (!(k in ["module_hardware_mac", "wifi_ssid"])) flat[k] = (v instanceof Map && v.containsKey("state")) ? v.state : v
+        if (!(k ==~ RAW_PRIVATE_STATE)) flat[k] = (v instanceof Map && v.containsKey("state")) ? v.state : v
     }
-    log.info "Dreo raw state ${ctx.model} ${ctx.sn}: ${JsonOutput.toJson(flat)}"
+    log.info "Dreo raw state ${ctx.model} ${shortSn(ctx.sn)}: ${JsonOutput.toJson(flat)}"
+}
+
+/** The last four characters of a serial number, enough to tell devices apart in a log. */
+private String shortSn(def sn) {
+    String s = sn?.toString() ?: ""
+    return s.length() > 4 ? "..." + s[-4..-1] : s
 }
 
 // ---------------------------------------------------------------- state refresh
@@ -529,7 +617,7 @@ def fanStateDone(data, Map ctx) {
 void connectSocket(Map data = [:]) {
     def conn = getConnection()
     if (!conn) return
-    if (!state.token) {
+    if (!currentToken()) {
         login("connectSocket", [:])
         return
     }
@@ -547,7 +635,7 @@ void wsOpened() {
 /** The socket closed or failed; `failures` counts attempts since the last open. */
 void wsClosed(String reason, int failures) {
     // Repeated failures may mean the token expired: sign in afresh.
-    if (failures >= 3) state.remove("token")
+    if (failures >= 3) dropToken()
     int delay = Math.min(60, 5 * (1 << Math.max(0, Math.min(failures - 1, 4))))
     if (state.authFailedAt) delay = (int) (AUTH_RETRY_MS / 1000)
     log.info "Dreo: cloud connection closed (${reason}); reconnecting in ${delay}s"
@@ -642,6 +730,10 @@ Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
     } catch (IllegalArgumentException e) {
         log.warn "Dreo: ${cd.displayName}: ${e.message}"
         return null
+    } catch (ClassCastException e) {
+        // e.g. a rule passing an empty value where a number is expected.
+        log.warn "Dreo: ${cd.displayName}: ${cmd} needs a value, got ${args}"
+        return null
     }
     if (!params) return null
     if (p.kind == "ceiling") params = gateParams(s, params)
@@ -652,6 +744,11 @@ Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
     }
     logDebug "${cd.displayName}: ${cmd} ${args} -> ${params}"
     conn.sendCommand(cd.getDataValue("sn"), params)
+    if (cmd == "setLevel" && params.windlevel instanceof Number) {
+        // Fans only have whole steps. Send the step's own percentage even when
+        // unchanged, so a slider left between two steps snaps back.
+        cd.sendEvent(name: "level", value: percentForStep(p, params.windlevel as int), unit: "%", isStateChange: true)
+    }
     return params
 }
 

@@ -26,7 +26,9 @@ def updated() {}
 /** Events from the parent fan. */
 void parse(List<Map> events) {
     events.each { Map e ->
-        if (txtEnable && device.currentValue(e.name)?.toString() != e.value?.toString()) {
+        // Most of each report is unchanged: skip those values rather than send them.
+        if (device.currentValue(e.name)?.toString() == e.value?.toString()) return
+        if (txtEnable) {
             e.descriptionText = "${device.displayName} ${e.name} is ${e.value}${e.unit ?: ''}"
             log.info e.descriptionText
         }

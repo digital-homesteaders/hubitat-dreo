@@ -184,18 +184,70 @@ check("unacknowledged command: two retries, then refresh and reconnect") {
     int from = conn().driver.callsNamed("ws.send").size()
     child("dreo-SN1").setSpeedLevel(4)
     hub.settle()
-    Closure lastTimeout = { conn().driver.callsNamed("runInMillis").last()[3].data }
-    conn().ackTimeout(lastTimeout())
-    conn().ackTimeout(lastTimeout())
+    // A timer firing early (another command's schedule) only re-arms itself.
+    int timers = conn().driver.callsNamed("runInMillis").size()
+    conn().ackTimeout()
+    assert sent(from)*.params == [[windlevel: 4]]
+    assert conn().driver.callsNamed("runInMillis").size() == timers + 1
+    hub.advance(2001)
+    conn().ackTimeout()
+    hub.advance(2001)
+    conn().ackTimeout()
     assert sent(from)*.params == [[windlevel: 4]] * 3
     int gets = app.callsNamed("asynchttpGet").size()
-    conn().ackTimeout(lastTimeout())
+    hub.advance(2001)
+    conn().ackTimeout()
     hub.settle()
     assert app.callsNamed("asynchttpGet").size() == gets + 1
     assert conn().currentValue("connection") == "disconnected"
     assert app.callsNamed("runIn").last()[2] == "connectSocket"
-    // A stale timeout for an old command is ignored.
-    conn().ackTimeout([id: -1])
+    // Nothing in flight: a late timer does nothing.
+    conn().ackTimeout()
+    assert sent(from).size() == 3
+}
+
+check("ack must mention a key that was sent: a button-press report doesn't count") {
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    int from = conn().driver.callsNamed("ws.send").size()
+    child("dreo-SN1").setSpeedLevel(3)
+    child("dreo-SN1").setMode("sleep")
+    hub.settle()
+    assert sent(from)*.params == [[windlevel: 3]]
+    ws([devicesn: "SN1", method: "control-report", reported: [childlockon: true]])
+    assert sent(from).size() == 1               // still waiting for windlevel's ack
+    ws([devicesn: "SN1", method: "control-report", reported: [windlevel: 3]])
+    assert sent(from)*.params == [[windlevel: 3], [mode: 3]]
+    ack("SN1")
+}
+
+check("rejected command: refresh, and the error isn't merged into state") {
+    int from = conn().driver.callsNamed("ws.send").size()
+    FakeDevice f = child("dreo-SN1")
+    f.setChildLock("off")
+    hub.settle()
+    int gets = app.callsNamed("asynchttpGet").size()
+    ws([devicesn: "SN1", method: "control-report", reported: [error_code: 500003, error_msg: "instruction validate failed"]])
+    assert app.callsNamed("asynchttpGet").size() == gets + 1
+    assert !f.driver.state.dreo.containsKey("error_code")
+    assert conn().driver.log.at("warn").any { it.contains("500003") }
+}
+
+check("commands queued while disconnected expire and refresh even if the socket never opens") {
+    conn().disconnect()
+    hub.settle()
+    FakeDevice f = child("dreo-SN1")
+    f.on()
+    hub.settle()
+    assert conn().driver.callsNamed("runIn").last()[2] == "expireQueue"
+    int gets = app.callsNamed("asynchttpGet").size()
+    conn().expireQueue()                        // too early: kept
+    assert app.callsNamed("asynchttpGet").size() == gets
+    hub.advance(31000)
+    conn().expireQueue()
+    hub.settle()
+    assert app.callsNamed("asynchttpGet").size() == gets + 1
+    assert conn().driver.log.at("warn").any { it.contains("not connected in time") }
 }
 
 check("reconnect, then a queued command goes out") {
@@ -348,18 +400,76 @@ check("humidifier commands: sent, shown straight away, acked") {
     assert app.log.at("warn").any { it.contains("target humidity must be 30-80") }
 }
 
-check("raw data button logs the device list and each state, without mac or ssid") {
+check("raw data button logs model data only: no owner, home, room, mac, ssid or full serial") {
     app.appButtonHandler("dumpRaw")
     Map req = app.callsNamed("asynchttpGet").last()[3]
     assert req.cb == "dumpDevices"
-    app.dumpDevices([list: [[sn: "SN5", model: "DR-HHM001S", mac: "aa:bb", controlsConf: [template: "DR-HHM001S"]]]], [:])
-    assert app.callsNamed("asynchttpGet").last()[3].data == [sn: "SN5", model: "DR-HHM001S"]
+    app.dumpDevices([list: [[sn: "SN0005", model: "DR-HHM001S", mac: "aa:bb", owner: "owner@example.com",
+        familyName: "Example Home", roomName: "Nursery", deviceName: "Nursery Humidifier",
+        seriesName: "HM311S", controlsConf: [template: "DR-HHM001S"]]]], [:])
+    assert app.callsNamed("asynchttpGet").last()[3].data == [sn: "SN0005", model: "DR-HHM001S"]
     app.dumpState([mixed: [worktime: [state: 12], filtertime: [state: 75], wifi_ssid: [state: "home"],
-        module_hardware_mac: [state: "aa:bb"]]], [sn: "SN5", model: "DR-HHM001S"])
+        module_hardware_mac: [state: "aa:bb"], ip: [state: "10.0.0.9"], module_ipaddr: [state: "10.0.0.9"]]],
+        [sn: "SN0005", model: "DR-HHM001S"])
     List info = app.log.at("info")
-    assert info.any { it.contains('Dreo raw device DR-HHM001S SN5: {"sn":"SN5"') && it.contains('"template":"DR-HHM001S"') }
-    assert info.any { it == 'Dreo raw state DR-HHM001S SN5: {"filtertime":75,"worktime":12}' }
-    assert !info.any { it.contains("aa:bb") || it.contains("home") }
+    assert info.any { it == 'Dreo raw device DR-HHM001S ...0005: {"model":"DR-HHM001S","seriesName":"HM311S","controlsConf":{"template":"DR-HHM001S"}}' }
+    assert info.any { it == 'Dreo raw state DR-HHM001S ...0005: {"filtertime":75,"worktime":12}' }
+    assert !info.findAll { it.startsWith("Dreo raw") }.any { it =~ /aa:bb|home|Example Home|owner@|Nursery|10\.0\.0\.9|SN0005/ }
+}
+
+/** A login response as asynchttpPost hands it to loginDone. */
+class FakeResp {
+    int status = 200
+    Map json
+    Map getJson() { json }
+    boolean hasError() { status != 200 }
+    String getErrorMessage() { "HTTP ${status}" }
+}
+
+check("token expiry: concurrent 401s share one sign-in, then every request is replayed") {
+    hub.advance(61000)                        // any earlier sign-in is long over
+    app.state.region = "NA"
+    int posts = app.callsNamed("asynchttpPost").size()
+    int gets = app.callsNamed("asynchttpGet").size()
+    // Two fan refreshes come back 401 with the same (expired) token.
+    Map r1 = [path: "/api/user-device/device/state", query: [deviceSn: "SN1"], cb: "fanStateDone", data: [sn: "SN1"], retried: false, tokenAt: app.state.tokenAt]
+    Map r2 = [path: "/api/user-device/device/state", query: [deviceSn: "SN2"], cb: "fanStateDone", data: [sn: "SN2"], retried: false, tokenAt: app.state.tokenAt]
+    app.apiGetDone(new FakeResp(status: 401), r1)
+    app.apiGetDone(new FakeResp(status: 401), r2)
+    assert app.callsNamed("asynchttpPost").size() == posts + 1
+    Map ctx = app.callsNamed("asynchttpPost").last()[3]
+    app.loginDone(new FakeResp(json: [code: 0, data: [access_token: "tok2", region: "NA"]]), ctx)
+    hub.settle()
+    List replays = app.callsNamed("asynchttpGet").drop(gets).collect { it[3] }
+    assert replays*.data == [[sn: "SN1"], [sn: "SN2"]]
+    assert app.callsNamed("asynchttpGet").drop(gets).every { it[2].headers.Authorization == "Bearer tok2" }
+    // A third 401 sent with the old token just replays with the new one.
+    Map r3 = r1 + [tokenAt: 1L]
+    app.apiGetDone(new FakeResp(status: 401), r3)
+    assert app.callsNamed("asynchttpPost").size() == posts + 1
+    assert app.callsNamed("asynchttpGet").last()[3].retried == true
+}
+
+check("a command with an empty value warns instead of throwing") {
+    int from = conn().driver.callsNamed("ws.send").size()
+    FakeDevice f = child("dreo-SN2")
+    f.setLevel(null)
+    f.setSpeedLevel(null)
+    hub.settle()
+    assert sent(from).isEmpty()
+    assert app.log.at("warn").count { it.contains("needs a value") } == 2
+}
+
+check("unchanged values in a report send no events") {
+    FakeDevice f = child("dreo-SN2")
+    ws([devicesn: "SN2", method: "report", reported: [windlevel: 5]])
+    int n = f.events.size()
+    ws([devicesn: "SN2", method: "report", reported: [windlevel: 5]])
+    assert f.events.size() == n
+    FakeDevice light = f.driver.getChildDevice("dreo-SN2-light")
+    int ln = light.events.size()
+    ws([devicesn: "SN2", method: "report", reported: [brightness: light.currentValue("level")]])
+    assert light.events.size() == ln
 }
 
 check("unticking a fan removes it") {

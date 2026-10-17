@@ -45,7 +45,7 @@ private Map mem() {
     Long id = device.idAsLong
     Map m = MEM.get(id)
     if (m == null) {
-        m = [queue: [], inflight: null, seq: 0, open: false]
+        m = [queue: [], inflight: null, open: false]
         MEM.putIfAbsent(id, m)
         m = MEM.get(id)
     }
@@ -80,7 +80,8 @@ def disconnect() {
 
 private void closeSocket() {
     unschedule("keepAlive")
-    unschedule("ackTimeout")
+    // ackTimeout stays scheduled: it drops (and reports) a command still in
+    // flight, which would otherwise block the queue after the reconnect.
     mem().open = false
     try { interfaces.webSocket.close() } catch (e) { /* not open */ }
     sendEvent(name: "connection", value: "disconnected")
@@ -155,19 +156,32 @@ def parse(String text) {
     Map reported = msg.reported instanceof Map ? msg.reported : null
     logDebug "${method} ${sn} ${reported}"
 
+    boolean rejected = reported?.containsKey("error_code")
     if (method in ACK_METHODS) acknowledge(sn, reported)
-    parent?.dreoMessage(sn, method, method == "control-reply" ? null : reported)
+    // control-reply echoes the command, and a rejection carries only the error:
+    // neither is device state.
+    parent?.dreoMessage(sn, method, method == "control-reply" || rejected ? null : reported)
+}
+
+/**
+ * Whether a message acknowledges the in-flight command: same fan, and it
+ * mentions at least one of the keys sent (or is an error, or carries no
+ * keys). A report about other keys, such as a button press, is not an ack.
+ */
+private boolean acks(Map item, String sn, Map reported) {
+    if (item?.sn != sn) return false
+    if (!reported || reported.containsKey("error_code")) return true
+    return item.params.keySet().any { reported.containsKey(it) }
 }
 
 private void acknowledge(String sn, Map reported) {
     Map m = mem()
     Map done
     synchronized (m) {
-        if (m.inflight?.sn != sn) return
+        if (!acks(m.inflight, sn, reported)) return
         done = m.inflight
         m.inflight = null
     }
-    unschedule("ackTimeout")
     if (reported?.containsKey("error_code")) {
         log.warn "Dreo rejected command ${done.params} for ${sn}: ${reported.error_msg} (error ${reported.error_code})"
         parent?.commandFailed(sn)
@@ -185,57 +199,89 @@ void sendCommand(String sn, Map params) {
     }
     if (m.open) {
         sendNext()
-    } else if (device.currentValue("connection") != "connecting") {
-        parent?.connectSocket()
+        return
+    }
+    // Commands that wait too long for the socket are dropped and reported
+    // even if it never reopens.
+    runIn((int) (COMMAND_MAX_AGE_MS / 1000) + 1, "expireQueue")
+    if (device.currentValue("connection") != "connecting") parent?.connectSocket()
+}
+
+/** Drop queued commands older than COMMAND_MAX_AGE_MS and tell the app, so the fan is re-read. */
+def expireQueue() {
+    Map m = mem()
+    List stale = []
+    synchronized (m) {
+        while (m.queue && now() - (m.queue[0].queuedAt as long) > COMMAND_MAX_AGE_MS) stale << m.queue.remove(0)
+        if (m.queue) runIn((int) (COMMAND_MAX_AGE_MS / 1000) + 1, "expireQueue")
+    }
+    stale.each { Map item ->
+        log.warn "Dreo: dropped command ${item.params} for ${item.sn}: not connected in time"
+        parent?.commandFailed(item.sn)
     }
 }
 
 private void sendNext() {
+    expireQueue()
     Map m = mem()
     Map item
     synchronized (m) {
-        if (m.inflight || !m.open) return
-        while (m.queue && now() - (m.queue[0].queuedAt as long) > COMMAND_MAX_AGE_MS) {
-            Map stale = m.queue.remove(0)
-            log.warn "Dreo: dropped command ${stale.params} for ${stale.sn}: not connected in time"
-        }
-        if (!m.queue) return
+        if (m.inflight || !m.open || !m.queue) return
         item = m.queue.remove(0)
         m.inflight = item
+        stamp(m, item)
     }
-    transmit(item)
+    transmit(m, item)
 }
 
-private void transmit(Map item) {
-    Map m = mem()
+/** Count an attempt; call while holding the lock. */
+private void stamp(Map m, Map item) {
     item.attempts = (item.attempts as int) + 1
-    item.id = ++m.seq
+    item.sentAt = now()
+}
+
+private void transmit(Map m, Map item) {
     String payload = JsonOutput.toJson([devicesn: item.sn, method: "control", params: item.params, timestamp: now().toString()])
+    synchronized (m) {
+        // An ack may have arrived meanwhile: then there is nothing to (re)send.
+        if (!m.inflight.is(item)) return
+    }
     logDebug "Send ${payload}"
     try {
         interfaces.webSocket.sendMessage(payload)
     } catch (e) {
         log.warn "Dreo: send failed: ${e.message}"
     }
-    runInMillis(ACK_TIMEOUT_MS, "ackTimeout", [data: [id: item.id]])
+    // One timer serves whatever is in flight when it fires (see ackTimeout),
+    // so a later schedule replacing this one never leaves a command unwatched.
+    runInMillis(ACK_TIMEOUT_MS, "ackTimeout")
 }
 
-def ackTimeout(Map data) {
+def ackTimeout(Map data = null) {
     Map m = mem()
     Map item
     boolean retry = false
+    long wait = 0
     synchronized (m) {
         item = m.inflight
-        if (!item || item.id != data?.id) return
-        if ((item.attempts as int) <= MAX_RETRIES && m.open) {
-            retry = true
-        } else {
-            m.inflight = null
+        if (!item) return
+        wait = (item.sentAt as long) + ACK_TIMEOUT_MS - now()
+        if (wait <= 0) {
+            if ((item.attempts as int) <= MAX_RETRIES && m.open) {
+                retry = true
+                stamp(m, item)
+            } else {
+                m.inflight = null
+            }
         }
     }
+    if (wait > 0) {
+        runInMillis(wait, "ackTimeout")
+        return
+    }
     if (retry) {
-        logDebug "No acknowledgement for ${item.sn} (attempt ${item.attempts}), retrying"
-        transmit(item)
+        logDebug "No acknowledgement for ${item.sn} (attempt ${item.attempts - 1}), retrying"
+        transmit(m, item)
         return
     }
     log.warn "Dreo did not acknowledge command ${item.params} for ${item.sn}"
@@ -246,6 +292,7 @@ def ackTimeout(Map data) {
         state.failures = 0
         parent?.wsClosed("no acknowledgement", 1)
     }
+    sendNext()
 }
 
 private void logDebug(String msg) {

@@ -29,11 +29,9 @@ def updated() {}
 /** Events from the parent fan. */
 void parse(List<Map> events) {
     events.each { Map e ->
-        if (e.name == "hue" || e.name == "saturation") {
-            sendEvent(e)
-            return
-        }
-        if (txtEnable && device.currentValue(e.name)?.toString() != e.value?.toString() && !(e.name in ["lightEffects", "RGB", "colorMode"])) {
+        // Most of each report is unchanged: skip those values rather than send them.
+        if (device.currentValue(e.name)?.toString() == e.value?.toString()) return
+        if (txtEnable && !(e.name in ["hue", "saturation", "lightEffects", "RGB", "colorMode"])) {
             e.descriptionText = "${device.displayName} ${e.name} is ${e.value}${e.unit ?: ''}"
             log.info e.descriptionText
         }

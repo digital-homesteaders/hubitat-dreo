@@ -50,7 +50,10 @@ needs its `GITHUB_OWNER` placeholders replaced.
 
 If a device isn't mapped yet or shows the wrong thing, press **Log raw Dreo
 data** in the app (under Logging): it writes each device's raw device-list
-entry and full state to **Logs**, without MAC addresses or the Wi-Fi name.
+entry and full state to **Logs**. Only model data is kept: no owner, home,
+room or device names, MAC or IP addresses, Wi-Fi name, or full serial numbers
+(the last four characters tell devices apart), so the log is safe to paste
+into a forum post.
 
 Only an MD5 hash of the password is stored (that is what Dreo's sign-in
 expects); the password field is cleared once it is hashed. North American and

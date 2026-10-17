@@ -62,13 +62,8 @@ def on() { sendDreo("on") }
 def off() { sendDreo("off") }
 def setSpeed(speed) { sendDreo("setSpeed", [speed]) }
 def cycleSpeed() { sendDreo("cycleSpeed") }
-def setLevel(level, duration = null) {
-    sendDreo("setLevel", [level])
-    // The fan only has whole steps. Re-send the level of the step it is on even
-    // when unchanged, so a slider left between two steps snaps back.
-    def snapped = device.currentValue("level", true)
-    if (snapped != null && (level as double) > 0) sendEvent(name: "level", value: snapped, unit: "%", isStateChange: true)
-}
+// The app snaps the level to the step the fan lands on.
+def setLevel(level, duration = null) { sendDreo("setLevel", [level]) }
 def setSpeedLevel(level) { sendDreo("setSpeedLevel", [level]) }
 def setMode(mode) { sendDreo("setMode", [mode]) }
 def setPanelSound(value) { sendDreo("setPanelSound", [value]) }
@@ -129,7 +124,10 @@ private Map opts() {
 }
 
 private void emit(Map e) {
-    if (txtEnable && device.currentValue(e.name)?.toString() != e.value?.toString() && !(e.name in ["supportedFanSpeeds", "supportedModes", "maxSpeedLevel"])) {
+    // Most of each report is unchanged: skip those values rather than send them.
+    boolean same = device.currentValue(e.name)?.toString() == e.value?.toString()
+    if (same && !e.isStateChange) return
+    if (txtEnable && !same && !(e.name in ["supportedFanSpeeds", "supportedModes", "maxSpeedLevel"])) {
         e.descriptionText = "${device.displayName} ${e.name} is ${e.value}${e.unit ?: ''}"
         log.info e.descriptionText
     }

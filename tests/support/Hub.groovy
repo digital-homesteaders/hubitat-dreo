@@ -22,6 +22,7 @@ class Hub {
     Map<String, File> driverFiles = [:]   // driver name -> source file
     Map<String, Class> classes = [:]      // path -> compiled class
     String temperatureScale = "F"
+    long clockOffset = 0                  // added to now(); see advance()
     long nextId = 100
     List<HubitatScript> scripts = []
     GroovyShell shell
@@ -53,6 +54,9 @@ class Hub {
         scripts << s
         return s
     }
+
+    /** Move the hub's clock forward, e.g. past an acknowledgement timeout. */
+    void advance(long ms) { clockOffset += ms }
 
     /** End of an execution: every script's state goes through JSON, as on the hub. */
     void settle() { scripts.each { it.persistState() } }
@@ -127,7 +131,7 @@ abstract class HubitatScript extends Script {
     def dynamicPage(Map m, Closure c) { swallow(c); return m }
 
     // ---- time and scheduling
-    long now() { System.currentTimeMillis() }
+    long now() { System.currentTimeMillis() + (hub?.clockOffset ?: 0) }
     void runIn(Number secs, String handler, Map opts = [:]) { calls << ["runIn", secs, handler, opts] }
     void runInMillis(Number ms, String handler, Map opts = [:]) { calls << ["runInMillis", ms, handler, opts] }
     void runEvery30Minutes(String handler) { calls << ["runEvery30Minutes", handler] }
