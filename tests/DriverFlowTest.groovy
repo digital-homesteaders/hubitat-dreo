@@ -118,7 +118,7 @@ check("fan command: sent once, shown straight away, cleared by the ack") {
     assert f.currentValue("mode") == "sleep"
 }
 
-check("setLevel: percent sets the step and the picked percentage stays") {
+check("setLevel: percent sets the nearest step and level snaps to that step") {
     int from = conn().driver.callsNamed("ws.send").size()
     FakeDevice f = child("dreo-SN1")
     f.setLevel(50)
@@ -126,9 +126,24 @@ check("setLevel: percent sets the step and the picked percentage stays") {
     assert sent(from)*.params == [[windlevel: 5]]  // sleep mode stays; only auto is left
     ack("SN1")
     ws([devicesn: "SN1", method: "report", reported: [windlevel: 5]])
-    assert f.currentValue("level") == 50 && f.currentValue("speedLevel") == 5
+    assert f.currentValue("level") == 56 && f.currentValue("speedLevel") == 5
     ws([devicesn: "SN1", method: "report", reported: [windlevel: 7]])
     assert f.currentValue("level") == 78
+}
+
+check("setLevel between steps: level snaps back to the fan's step") {
+    FakeDevice f = child("dreo-SN1")
+    assert f.currentValue("level") == 78  // step 7 of 9
+    int events = f.events.size()
+    f.setLevel(75)                         // nearest step is still 7
+    hub.settle()
+    ack("SN1")
+    Map last = f.events.drop(events).findAll { it.name == "level" }[-1]
+    assert last.value == 78 && last.isStateChange == true
+    f.setLevel(35)                         // nearest step 3 = 33 %
+    hub.settle()
+    ack("SN1")
+    assert f.currentValue("level") == 33 && f.currentValue("speedLevel") == 3
 }
 
 check("bad command input: warning, nothing sent") {

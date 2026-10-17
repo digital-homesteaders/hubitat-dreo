@@ -525,8 +525,8 @@ void commandFailed(String sn) {
 /**
  * The Hubitat events for a fan's merged Dreo state. Each event is a sendEvent
  * map; events with a `child` key ("light" or "ring") belong to that child.
- * `opts`: speedSteps (override, 0 = model default), level (the fan's current
- * speed percentage), ringHue/ringSaturation (the ring child's current values).
+ * `opts`: speedSteps (override, 0 = model default), ringHue/ringSaturation
+ * (the ring child's current values).
  */
 List dreoEvents(cd, Map s, Map opts = [:]) {
     Map p = profile(cd.getDataValue("model"), s, opts)
@@ -543,11 +543,8 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
     if (s.windlevel instanceof Number) {
         int level = s.windlevel as int
         ev << [name: "speedLevel", value: level]
-        // Keep a percentage picked in Hubitat (say 50% for step 5 of 9) while
-        // the fan stays on that step; otherwise show the step's own share.
-        if (opts?.level == null || stepForPercent(p, opts.level) != level) {
-            ev << [name: "level", value: percentForStep(p, level), unit: "%"]
-        }
+        // Always the step's own share, so a slider snaps to speeds the fan has.
+        ev << [name: "level", value: percentForStep(p, level), unit: "%"]
         String speed = on == false ? "off" : (modeId == "auto" ? "auto" : speedNameFor(p, level))
         ev << [name: "speed", value: speed]
     } else if (on == false) {

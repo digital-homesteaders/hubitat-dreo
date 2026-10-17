@@ -72,8 +72,9 @@ high (for 9 steps: 2, 4, 5, 7, 9). Fans with fewer steps use a subset (for 4
 steps: low, medium-low, medium-high, high = 1, 2, 3, 4). Setting a named speed
 or a step while in Auto mode switches the fan to Normal.
 
-A percentage you set stays as you set it while the fan is on the matching
-step (50 % on a 9-step fan stays 50 %, not 56 %). Because fans have
+The level always shows the step the fan is really on, so a slider snaps to
+the nearest speed the fan has (50 % on a 9-step fan becomes step 5, shown as
+56 %). Because fans have
 SwitchLevel, some apps and voice assistants may offer them as dimmers; pick
 the fan device type where the integration asks.
 

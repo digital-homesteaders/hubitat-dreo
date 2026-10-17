@@ -183,11 +183,10 @@ check("setLevel: percent to the nearest step, like Homey's fan speed") {
     assert cmd("DR-HCF001S", [poweron: true, fanon: true], "setLevel", [50]) == [windlevel: 6]
 }
 
-check("level events: step share, keeping a picked percentage on the same step") {
+check("level events: always the step's own share") {
     Map s = [poweron: true, windlevel: 5, mode: 1]
     assert events("DR-HTF011S", s).level == 56
-    assert !events("DR-HTF011S", s, [level: 50]).containsKey("level")
-    assert events("DR-HTF011S", s, [level: 30]).level == 56
+    assert events("DR-HTF011S", s, [level: 50]).level == 56
     assert events("DR-HTF011S", [poweron: true, windlevel: 1, mode: 1]).level == 11
     assert events("DR-HAF001S", [poweron: true, windlevel: 2, mode: 1]).level == 50
     // Off keeps the level, like a dimmer.

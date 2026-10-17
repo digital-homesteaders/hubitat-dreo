@@ -63,9 +63,11 @@ def off() { sendDreo("off") }
 def setSpeed(speed) { sendDreo("setSpeed", [speed]) }
 def cycleSpeed() { sendDreo("cycleSpeed") }
 def setLevel(level, duration = null) {
-    // Show the percentage as picked; the app keeps it while the fan is on the matching step.
-    if (level != null && (level as double) > 0) emit([name: "level", value: Math.min(100, (int) Math.round(level as double)), unit: "%"])
     sendDreo("setLevel", [level])
+    // The fan only has whole steps. Re-send the level of the step it is on even
+    // when unchanged, so a slider left between two steps snaps back.
+    def snapped = device.currentValue("level", true)
+    if (snapped != null && (level as double) > 0) sendEvent(name: "level", value: snapped, unit: "%", isStateChange: true)
 }
 def setSpeedLevel(level) { sendDreo("setSpeedLevel", [level]) }
 def setMode(mode) { sendDreo("setMode", [mode]) }
@@ -121,7 +123,6 @@ private Map opts() {
     def ring = getChildDevice("${device.deviceNetworkId}-ring")
     return [
         speedSteps: (settings.speedSteps ?: 0) as int,
-        level: device.currentValue("level"),
         ringHue: ring?.currentValue("hue"),
         ringSaturation: ring?.currentValue("saturation"),
     ]
