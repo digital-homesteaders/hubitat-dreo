@@ -251,6 +251,9 @@ class FakeDevice {
         current[e.name as String] = e.value
     }
 
+    void deleteCurrentState(String attr) { current.remove(attr) }
+    void updateSetting(String k, def v) { driver.settings[k] = v instanceof Map ? v.value : v }
+
     /** The latest event for an attribute. */
     Map lastEvent(String attr) { events.reverse().find { it.name == attr } }
 

@@ -77,4 +77,14 @@ check("child device methods called by the app exist and are public") {
     }
 }
 
+// One release version everywhere, so the app's driver-version check means something.
+check("every app and driver carries the packageManifest.json version") {
+    String version = new groovy.json.JsonSlurper().parse(new File(root, "packageManifest.json")).version
+    Map stamped = files.collectEntries { File f ->
+        def v = (f.text =~ /static final String (?:DRIVER_)?VERSION = "([^"]+)"/)
+        [(f.name): v.find() ? v.group(1) : "none"]
+    }
+    assert stamped.values().every { it == version }, "run scripts/release.sh: ${stamped} vs ${version}"
+}
+
 Check.finish()

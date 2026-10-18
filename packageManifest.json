@@ -1,12 +1,12 @@
 {
   "packageName": "Dreo Connect",
   "author": "Digital Homesteaders",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minimumHEVersion": "2.3.0",
-  "dateReleased": "2026-10-15",
+  "dateReleased": "2026-10-18",
   "documentationLink": "https://github.com/GITHUB_OWNER/hubitat-dreo#readme",
   "licenseFile": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/LICENSE",
-  "releaseNotes": "First release: Dreo tower fans, air circulators and ceiling fans over Dreo's cloud.",
+  "releaseNotes": "Humidifiers (DR-HHM), fan head position and saved positions, 1-12 speed dropdown, version check, private keys kept out of device state.",
   "apps": [
     {
       "id": "fd84052a-2c44-4198-bb0f-3fc2309386ee",

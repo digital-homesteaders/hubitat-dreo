@@ -41,6 +41,10 @@ preferences {
 
 // ---------------------------------------------------------------- constants
 
+// The release version, the same in the app, every driver and packageManifest.json
+// (scripts/release.sh sets them all). Drivers compare theirs with it.
+@Field static final String VERSION = "0.2.0"
+
 @Field static final String CLIENT_ID = "7de37c362ee54dcf9c4561812309347a"
 @Field static final String CLIENT_SECRET = "32dfa0764f25451d99f94e1693498791"
 @Field static final String HIMEI = "faede31549d649f58864093158787ec9"
@@ -64,6 +68,13 @@ preferences {
 
 // State keys the raw dump leaves out: network identifiers and anything secret-looking.
 @Field static final String RAW_PRIVATE_STATE = /(?i).*(mac|ssid|ipaddr|password|token|secret).*|ip|.*_ip/
+
+// State keys devices don't keep: hardware and firmware details (firmware goes
+// in a data value) and network readings that change all the time, each change
+// costing a state write, without meaning anything here. Private keys
+// (RAW_PRIVATE_STATE) are dropped too.
+@Field static final List STATE_SKIP = ["wifi_rssi", "network_latency", "module_hardware_model", "mcu_hardware_model",
+    "module_firmware_version", "mcu_firmware_version", "_ota"]
 
 @Field static final String PATH_LOGIN = "/api/oauth/login"
 @Field static final String PATH_DEVICES = "/api/v2/user-device/device/list"
@@ -197,7 +208,8 @@ def mainPage() {
             }
         }
         section("Logging") {
-            input "logEnable", "bool", title: "Debug logging", defaultValue: false
+            input "logEnable", "bool", title: "Debug logging (turns itself off after 30 minutes)", defaultValue: false
+            paragraph "Dreo Connect version ${VERSION}${driverVersionNote()}"
             if (settings.email && state.passwordHash) {
                 input name: "dumpRaw", type: "button", title: "Log raw Dreo data"
                 paragraph "Writes each device's raw Dreo device-list entry and full state to Logs, for reporting a model that isn't mapped yet."
@@ -290,8 +302,11 @@ def uninstalled() {
 }
 
 void initialize() {
+    log.info "Dreo Connect ${VERSION}"
     hashPasswordSetting()
     syncChildren()
+    checkDrivers()
+    if (settings.logEnable) runIn(1800, "logsOff")
     if (getFanDevices()) {
         runEvery30Minutes("pollAll")
         connectSocket()
@@ -335,6 +350,41 @@ private void syncChildren() {
             log.error "Dreo: could not add the cloud connection device: ${e.message} (is the 'Dreo Cloud Connection' driver installed?)"
         }
     }
+}
+
+/** Debug logging switches itself off 30 minutes after it's turned on. */
+void logsOff() {
+    app.updateSetting("logEnable", [value: "false", type: "bool"])
+}
+
+/** The app's code version; drivers check theirs against it. */
+String dreoVersion() { VERSION }
+
+/**
+ * Ask every device which driver version it runs (fans also ask their light
+ * children). A driver too old to answer is from an earlier version too.
+ */
+private void checkDrivers() {
+    List odd = []
+    getChildDevices().each { cd ->
+        try {
+            odd.addAll(cd.dreoHello(VERSION) ?: [])
+        } catch (e) {
+            odd << "${cd.displayName} (older)".toString()
+        }
+    }
+    state.driverVersions = odd
+    if (odd) log.warn "Dreo: drivers from another version than the app (${VERSION}): ${odd.join(', ')}. Re-paste them and press Done."
+}
+
+private String driverVersionNote() {
+    List odd = state.driverVersions ?: []
+    return odd ? ". <b>Drivers from another version:</b> ${odd.join(', ')}. Re-paste them and press Done." : ""
+}
+
+/** Merged Dreo state as devices keep it: without private, hardware and noisy network keys. */
+Map dreoState(Map s) {
+    return (s ?: [:]).findAll { k, v -> !(k in STATE_SKIP) && !(k ==~ RAW_PRIVATE_STATE) }
 }
 
 private String fanDni(String sn) { "dreo-${sn}" }
@@ -640,6 +690,8 @@ def fanStateDone(data, Map ctx) {
     (data.mixed ?: [:]).each { k, v ->
         flat[k] = (v instanceof Map && v.containsKey("state")) ? v.state : v
     }
+    String fw = ["module_firmware_version", "mcu_firmware_version"].findAll { flat[it] }.collect { flat[it] }.join(" / ")
+    if (fw && cd.getDataValue("firmware") != fw) cd.updateDataValue("firmware", fw)
     cd.dreoUpdate(flat, flat.connected == false ? false : true)
 }
 
@@ -772,6 +824,13 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
  * was sent). Light commands are prefixed "light." or "ring.".
  */
 Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
+    if (cd.currentValue("healthStatus") == "offline") {
+        // Dreo doesn't answer for an offline device, and a missing answer would
+        // make the connection reconnect. Re-read it in case "offline" is stale.
+        log.warn "Dreo: ${cd.displayName} is offline in Dreo's cloud; ${cmd} not sent"
+        refreshFan(cd.getDataValue("sn"))
+        return null
+    }
     boolean humidifier = kindOf(cd.getDataValue("model")) == "humidifier"
     Map p = humidifier ? humidifierProfile(cd) : profile(cd.getDataValue("model"), s, opts)
     Map params

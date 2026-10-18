@@ -305,6 +305,44 @@ check("reconnect, then a queued command goes out") {
     ack("SN1")
 }
 
+check("commands waiting for the same device merge into one") {
+    int from = conn().driver.callsNamed("ws.send").size()
+    FakeDevice f = child("dreo-SN1")
+    f.setSpeedLevel("3")                   // goes out (and switches the fan back on)
+    hub.settle()
+    f.setSpeedLevel("4")                   // waits
+    hub.settle()
+    child("dreo-SN2").setMode("natural")   // waits, another device
+    hub.settle()
+    f.setMode("normal")                    // joins SN1's waiting command
+    f.setSpeedLevel("6")                   // and replaces its speed
+    hub.settle()
+    assert sent(from)*.params == [[poweron: true, windlevel: 3]]
+    ack("SN1")
+    assert sent(from)[1].devicesn == "SN1" && sent(from)[1].params == [windlevel: 6, mode: 1]
+    ack("SN1")
+    assert sent(from)[2].devicesn == "SN2" && sent(from).size() == 3
+    ack("SN2")
+    assert f.currentValue("speedLevel") == 6 && f.currentValue("mode") == "normal"
+}
+
+check("no acknowledgement while Dreo still sends other messages: no reconnect") {
+    FakeDevice f = child("dreo-SN1")
+    int gets = app.callsNamed("asynchttpGet").size()
+    f.setSpeedLevel("2")
+    hub.settle()
+    hub.advance(10)
+    ws([devicesn: "SN2", method: "report", reported: [windlevel: 4]])  // the link works
+    3.times {
+        hub.advance(2100)
+        conn().ackTimeout()
+    }
+    hub.settle()
+    assert conn().driver.log.at("warn").last().contains("did not acknowledge command [windlevel:2] for SN1")
+    assert conn().currentValue("connection") == "connected"
+    assert app.callsNamed("asynchttpGet").size() == gets + 1  // SN1 is re-read
+}
+
 check("ceiling fan: report creates the light child; gate closed shows everything off") {
     ws([devicesn: "SN2", method: "report", reported: [poweron: false, fanon: true, windlevel: 7, mode: 1,
         lighton: true, brightness: 60, colortemp: 100]])
@@ -348,6 +386,18 @@ check("offline and online messages set healthStatus") {
     ws([devicesn: "SN9", method: "report", reported: [poweron: true]])
 }
 
+check("an offline device gets no commands, and is re-read instead") {
+    ws([devicesn: "SN2", method: "device-offline"])
+    int from = conn().driver.callsNamed("ws.send").size()
+    int gets = app.callsNamed("asynchttpGet").size()
+    child("dreo-SN2").setSpeedLevel("3")
+    hub.settle()
+    assert sent(from).isEmpty()
+    assert app.log.at("warn").last() == "Dreo: Bedroom Fan is offline in Dreo's cloud; setSpeedLevel not sent"
+    assert app.callsNamed("asynchttpGet").drop(gets)*.get(3)*.data*.sn == ["SN2"]
+    ws([devicesn: "SN2", method: "device-online", reported: [:]])
+}
+
 check("REST refresh flattens mixed state") {
     app.fanStateDone([mixed: [poweron: [state: true], windlevel: [state: 2], mode: [state: 2],
         connected: [state: false]]], [sn: "SN1"])
@@ -356,6 +406,70 @@ check("REST refresh flattens mixed state") {
     assert f.currentValue("speedLevel") == 2 && f.currentValue("mode") == "natural"
     assert f.currentValue("healthStatus") == "offline"
     app.fanStateDone(null, [sn: "SN1"])  // failed request: no change, no error
+}
+
+check("devices keep no network identifiers or noisy keys; firmware becomes a data value") {
+    app.fanStateDone([mixed: [wifi_ssid: [state: "home"], module_hardware_mac: [state: "aa:bb"], wifi_rssi: [state: -43],
+        network_latency: [state: 30], module_firmware_version: [state: "3.2.2"], mcu_firmware_version: [state: "1.0.5"],
+        ip: [state: "10.0.0.5"], windlevel: [state: 3]]], [sn: "SN1"])
+    hub.settle()
+    FakeDevice f = child("dreo-SN1")
+    Map s = f.driver.state.dreo
+    assert s.windlevel == 3 && s.poweron == true
+    assert !s.keySet().any { it in ["wifi_ssid", "module_hardware_mac", "wifi_rssi", "network_latency", "ip",
+        "module_firmware_version", "mcu_firmware_version"] }
+    assert f.getDataValue("firmware") == "3.2.2 / 1.0.5"
+    // Keys stored by an earlier version go at the next update.
+    f.driver.state.dreo = s + [wifi_ssid: "home"]
+    ws([devicesn: "SN1", method: "report", reported: [windlevel: 4]])
+    assert !f.driver.state.dreo.containsKey("wifi_ssid")
+}
+
+check("a leftover percentage level from before 0.2.0 is cleared") {
+    FakeDevice f = child("dreo-SN1")
+    f.current.level = 56
+    ws([devicesn: "SN1", method: "report", reported: [windlevel: 2]])  // back to step 2 for the next check
+    assert !f.current.containsKey("level")
+}
+
+check("debug logging turns itself off after 30 minutes") {
+    app.settings.logEnable = true
+    app.updated()
+    hub.settle()
+    assert app.callsNamed("runIn").any { it[1] == 1800 && it[2] == "logsOff" }
+    app.logsOff()
+    assert app.settings.logEnable.toString() == "false"
+    FakeDevice f = child("dreo-SN1")
+    f.driver.settings.logEnable = true
+    f.updated()
+    assert f.driver.callsNamed("runIn").any { it[1] == 1800 && it[2] == "logsOff" }
+    f.logsOff()
+    assert f.driver.settings.logEnable.toString() == "false"
+    conn().driver.settings.logEnable = true
+    conn().updated()
+    assert conn().driver.callsNamed("runIn").any { it[2] == "logsOff" }
+}
+
+check("version check: matching drivers pass; an older driver is named on the main page") {
+    app.updated()
+    hub.settle()
+    assert app.state.driverVersions == []
+    assert child("dreo-SN1").getDataValue("driverVersion") == app.VERSION
+    assert child("dreo-SN1").driver.getChildDevice("dreo-SN1-ring").getDataValue("driverVersion") == app.VERSION
+    // A device whose driver predates dreoHello.
+    FakeDevice old = new FakeDevice(id: 999, deviceNetworkId: "dreo-OLD", name: "Old Fan", data: [sn: "OLD"])
+    app.children << old
+    app.settings.selectedFans = (app.settings.selectedFans ?: []) + ["OLD"]
+    app.updated()
+    hub.settle()
+    assert app.state.driverVersions == ["Old Fan (older)"]
+    assert app.log.at("warn").any { it.contains("Old Fan (older)") }
+    app.mainPage()
+    app.children.remove(old)
+    app.settings.selectedFans = app.settings.selectedFans - ["OLD"]
+    app.updated()
+    hub.settle()
+    assert app.state.driverVersions == []
 }
 
 check("speed-step preference re-maps named speeds") {

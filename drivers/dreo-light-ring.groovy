@@ -8,6 +8,11 @@
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */
 
+import groovy.transform.Field
+
+// Release version; the app compares it with its own (see dreoHello).
+@Field static final String DRIVER_VERSION = "0.2.0"
+
 metadata {
     definition(name: "Dreo Light Ring", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
         capability "Actuator"
@@ -49,3 +54,9 @@ def setEffect(effect) { parent?.componentSetEffect(device, effect) }
 def setNextEffect() { parent?.componentSetNextEffect(device) }
 def setPreviousEffect() { parent?.componentSetPreviousEffect(device) }
 def refresh() { parent?.componentRefresh(device) }
+
+/** Called by the app (or the parent fan) on Done: this driver's version where it differs from the app's. */
+List dreoHello(String appVersion) {
+    device.updateDataValue("driverVersion", DRIVER_VERSION)
+    return DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
+}

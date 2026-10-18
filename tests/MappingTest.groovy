@@ -544,6 +544,21 @@ check("dreoEvents: speed-step override and reported step above the table") {
     assert e2.maxSpeedLevel == 6 && json(e2.supportedFanSpeeds).size() == 5 + 3
 }
 
+check("dreoState drops private, hardware and noisy network keys") {
+    Map s = [poweron: true, windlevel: 3, wifi_ssid: "home", module_hardware_mac: "aa:bb", wifi_rssi: -43,
+             network_latency: 30, module_firmware_version: "3.2.2", mcu_hardware_model: "x", ip: "10.0.0.5",
+             fixedconf: "0,0", muteon: false, timeron: [du: 0, ts: 0]]
+    assert app.dreoState(s) == [poweron: true, windlevel: 3, fixedconf: "0,0", muteon: false, timeron: [du: 0, ts: 0]]
+    assert app.dreoState(null) == [:]
+}
+
+check("dreoCommand: an offline device gets nothing") {
+    FakeDevice cd = fan("DR-HTF011S")
+    cd.current.healthStatus = "offline"
+    assert app.dreoCommand(cd, ON9, "on", []) == null
+    assert app.log.at("warn").last().contains("offline in Dreo's cloud; on not sent")
+}
+
 // ---------------------------------------------------------------- head position and oscillation range
 
 // From hass-dreo's DR-HPF004S and DR-HPF008S state samples.

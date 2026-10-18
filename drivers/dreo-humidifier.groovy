@@ -7,6 +7,11 @@
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */
 
+import groovy.transform.Field
+
+// Release version; the app compares it with its own (see dreoHello).
+@Field static final String DRIVER_VERSION = "0.2.0"
+
 metadata {
     definition(name: "Dreo Humidifier", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
         capability "Actuator"
@@ -38,7 +43,7 @@ metadata {
     }
     preferences {
         input "txtEnable", "bool", title: "Description text logging", defaultValue: true
-        input "logEnable", "bool", title: "Debug logging", defaultValue: false
+        input "logEnable", "bool", title: "Debug logging (turns itself off after 30 minutes)", defaultValue: false
     }
 }
 
@@ -49,6 +54,7 @@ def installed() {
 }
 
 def updated() {
+    if (logEnable) runIn(1800, "logsOff")
     applyState()
 }
 
@@ -78,7 +84,8 @@ private void sendDreo(String cmd, List args = []) {
 /** Merge reported Dreo state; `online` is true/false when known, else null. */
 void dreoUpdate(Map reported, Boolean online) {
     Map s = (state.dreo ?: [:]) + (reported ?: [:])
-    state.dreo = s
+    // The app drops private, hardware and noisy network keys.
+    state.dreo = parent ? parent.dreoState(s) : s
     applyState()
     if (online != null) dreoOnline(online)
 }
@@ -105,4 +112,15 @@ private void emit(Map e) {
 
 private void logDebug(String msg) {
     if (logEnable) log.debug "${device.displayName}: ${msg}"
+}
+
+/** Debug logging switches itself off 30 minutes after it's turned on. */
+void logsOff() {
+    device.updateSetting("logEnable", [value: "false", type: "bool"])
+}
+
+/** Called by the app (or the parent fan) on Done: this driver's version where it differs from the app's. */
+List dreoHello(String appVersion) {
+    device.updateDataValue("driverVersion", DRIVER_VERSION)
+    return DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
 }

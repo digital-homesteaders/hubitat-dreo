@@ -17,6 +17,9 @@ import groovy.transform.Field
 // Slots for saved head positions.
 @Field static final List POSITION_SLOTS = ["1", "2", "3", "4", "5"]
 
+// Release version; the app compares it with its own (see dreoHello).
+@Field static final String DRIVER_VERSION = "0.2.0"
+
 metadata {
     definition(name: "Dreo Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
         capability "Actuator"
@@ -67,7 +70,7 @@ metadata {
     preferences {
         input "speedSteps", "number", title: "Number of speed steps (0 = from the model)", defaultValue: 0, range: "0..20"
         input "txtEnable", "bool", title: "Description text logging", defaultValue: true
-        input "logEnable", "bool", title: "Debug logging", defaultValue: false
+        input "logEnable", "bool", title: "Debug logging (turns itself off after 30 minutes)", defaultValue: false
     }
 }
 
@@ -78,6 +81,7 @@ def installed() {
 }
 
 def updated() {
+    if (logEnable) runIn(1800, "logsOff")
     // A changed speed-step override re-maps the named speeds.
     applyState()
 }
@@ -163,7 +167,8 @@ private void sendDreo(String cmd, List args = []) {
 /** Merge reported Dreo state; `online` is true/false when known, else null. */
 void dreoUpdate(Map reported, Boolean online) {
     Map s = (state.dreo ?: [:]) + (reported ?: [:])
-    state.dreo = s
+    // The app drops private, hardware and noisy network keys.
+    state.dreo = parent ? parent.dreoState(s) : s
     applyState()
     if (online != null) dreoOnline(online)
 }
@@ -174,6 +179,8 @@ void dreoOnline(boolean online) {
 
 private void applyState() {
     if (!state.dreo || !parent) return
+    // Fans had a percentage level before 0.2.0; clear the leftover value.
+    if (device.currentValue("level") != null) device.deleteCurrentState("level")
     List events = parent.dreoEvents(device, state.dreo, opts())
     events.each { Map e ->
         if (e.child) childEvent(e) else emit(e)
@@ -218,4 +225,23 @@ private void childEvent(Map e) {
 
 private void logDebug(String msg) {
     if (logEnable) log.debug "${device.displayName}: ${msg}"
+}
+
+/** Debug logging switches itself off 30 minutes after it's turned on. */
+void logsOff() {
+    device.updateSetting("logEnable", [value: "false", type: "bool"])
+}
+
+/** Called by the app on Done: this driver's (and its light children's) version where it differs from the app's. */
+List dreoHello(String appVersion) {
+    device.updateDataValue("driverVersion", DRIVER_VERSION)
+    List odd = DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
+    getChildDevices().each { c ->
+        try {
+            odd.addAll(c.dreoHello(appVersion) ?: [])
+        } catch (e) {
+            odd << "${c.displayName} (older)".toString()
+        }
+    }
+    return odd
 }

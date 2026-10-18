@@ -4,7 +4,8 @@
  *
  * One socket carries pushed state reports for every fan on the account and
  * the outgoing control commands. Commands go one at a time: each waits up to
- * 2 s for Dreo's acknowledgement and is retried up to twice.
+ * 2 s for Dreo's acknowledgement and is retried up to twice. Commands for a
+ * device that are still waiting merge into one (the newest value of each key).
  *
  * Protocol ported from hass-dreo (https://github.com/JeffSteinbok/hass-dreo,
  * MIT License; see LICENSE).
@@ -17,6 +18,9 @@ import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 
+// Release version; the app compares it with its own (see dreoHello).
+@Field static final String DRIVER_VERSION = "0.2.0"
+
 metadata {
     definition(name: "Dreo Cloud Connection", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
         capability "Initialize"
@@ -25,7 +29,7 @@ metadata {
         command "disconnect"
     }
     preferences {
-        input "logEnable", "bool", title: "Debug logging", defaultValue: false
+        input "logEnable", "bool", title: "Debug logging (turns itself off after 30 minutes)", defaultValue: false
     }
 }
 
@@ -58,7 +62,9 @@ def installed() {
     sendEvent(name: "connection", value: "disconnected")
 }
 
-def updated() {}
+def updated() {
+    if (settings.logEnable) runIn(1800, "logsOff")
+}
 
 /** Runs at hub start-up (Initialize capability): ask the app to connect. */
 def initialize() {
@@ -143,6 +149,8 @@ def keepAlive() {
 // ---------------------------------------------------------------- incoming
 
 def parse(String text) {
+    // Anything from Dreo shows the link is alive (see ackTimeout).
+    mem().lastRx = now()
     Map msg
     try {
         def j = new JsonSlurper().parseText(text)
@@ -195,7 +203,15 @@ private void acknowledge(String sn, Map reported) {
 void sendCommand(String sn, Map params) {
     Map m = mem()
     synchronized (m) {
-        m.queue << [sn: sn, params: params, queuedAt: now(), attempts: 0]
+        // A command still waiting for this device takes the new keys instead of
+        // queueing another (e.g. a rule or slider sending several in a row).
+        Map waiting = m.queue.find { it.sn == sn }
+        if (waiting) {
+            waiting.params = waiting.params + params
+            logDebug "Merged ${params} into the waiting command for ${sn}"
+        } else {
+            m.queue << [sn: sn, params: params, queuedAt: now(), attempts: 0]
+        }
     }
     if (m.open) {
         sendNext()
@@ -238,6 +254,7 @@ private void sendNext() {
 private void stamp(Map m, Map item) {
     item.attempts = (item.attempts as int) + 1
     item.sentAt = now()
+    if (!item.firstSentAt) item.firstSentAt = item.sentAt
 }
 
 private void transmit(Map m, Map item) {
@@ -286,8 +303,10 @@ def ackTimeout(Map data = null) {
     }
     log.warn "Dreo did not acknowledge command ${item.params} for ${item.sn}"
     parent?.commandFailed(item.sn)
-    // No ack at all usually means a dead link the hub hasn't noticed yet.
-    if (m.open) {
+    // No ack and nothing else from Dreo since the command went out usually
+    // means a dead link the hub hasn't noticed yet. If other messages arrived,
+    // the link works and only this device didn't answer: don't reconnect.
+    if (m.open && ((m.lastRx ?: 0L) as long) < (item.firstSentAt as long)) {
         closeSocket()
         state.failures = 0
         parent?.wsClosed("no acknowledgement", 1)
@@ -297,4 +316,15 @@ def ackTimeout(Map data = null) {
 
 private void logDebug(String msg) {
     if (settings.logEnable) log.debug "Dreo connection: ${msg}"
+}
+
+/** Debug logging switches itself off 30 minutes after it's turned on. */
+void logsOff() {
+    device.updateSetting("logEnable", [value: "false", type: "bool"])
+}
+
+/** Called by the app (or the parent fan) on Done: this driver's version where it differs from the app's. */
+List dreoHello(String appVersion) {
+    device.updateDataValue("driverVersion", DRIVER_VERSION)
+    return DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
 }

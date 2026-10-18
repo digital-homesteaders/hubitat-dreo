@@ -33,6 +33,17 @@ re-read over REST every 30 minutes and after every reconnect, as a safety net.
 The app ships a small table of speed ranges and modes per model rather than
 downloading Dreo's 700 KB app configuration on the hub.
 
+Commands go out one at a time. Commands for the same device that are still
+waiting merge into one (the newest value of each setting), so a rule or a
+burst of taps sends fewer messages. A device that Dreo reports offline gets no
+commands: the app logs a warning and re-reads it instead. If a command gets no
+answer while Dreo keeps sending other messages, only that device is re-read;
+the connection reconnects only when Dreo has gone quiet altogether.
+
+Devices keep Dreo's state for their own settings only: network details (Wi-Fi
+name, MAC and IP addresses, signal strength) are not stored, and the firmware
+versions go in the device's `firmware` data value.
+
 ## Install
 
 ### Hubitat Package Manager
@@ -50,6 +61,16 @@ needs its `GITHUB_OWNER` placeholders replaced.
 3. **Apps → Add User App → Dreo Connect**. Enter your Dreo email and
    password, open **Choose devices**, tick the fans and humidifiers you want,
    then press **Done**.
+
+**Updating:** re-paste the app and every driver from the same version, then
+press **Done** in the app. The app's Logging section shows its version and
+names any device whose driver comes from another version (each device's Data
+shows its `driverVersion`). Debug logging, in the app and on each device,
+turns itself off after 30 minutes.
+
+Fans used to have a percentage level (SwitchLevel). After updating from 0.1,
+the old `level` value disappears at the fan's next report; if Alexa or Google
+Home still show a fan as a dimmer, remove and re-add it there.
 
 If a device isn't mapped yet or shows the wrong thing, press **Log raw Dreo
 data** in the app (under Logging): it writes each device's raw device-list

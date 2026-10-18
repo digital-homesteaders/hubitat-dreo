@@ -6,6 +6,11 @@
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */
 
+import groovy.transform.Field
+
+// Release version; the app compares it with its own (see dreoHello).
+@Field static final String DRIVER_VERSION = "0.2.0"
+
 metadata {
     definition(name: "Dreo Ceiling Light", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
         capability "Actuator"
@@ -42,3 +47,9 @@ def setLevel(level, duration = null) { parent?.componentSetLevel(device, level, 
 /** Kelvin, 2700 (warm) to 6500 (cool). */
 def setColorTemperature(ct, level = null, transition = null) { parent?.componentSetColorTemperature(device, ct, level, transition) }
 def refresh() { parent?.componentRefresh(device) }
+
+/** Called by the app (or the parent fan) on Done: this driver's version where it differs from the app's. */
+List dreoHello(String appVersion) {
+    device.updateDataValue("driverVersion", DRIVER_VERSION)
+    return DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
+}
