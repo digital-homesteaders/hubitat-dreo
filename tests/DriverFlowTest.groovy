@@ -50,6 +50,22 @@ check("discovery lists fans, skips other devices, adds rooms") {
     assert !app.state.discovering && app.state.discoveredAt
 }
 
+check("Look again lists the devices again, once at a time") {
+    int gets = app.callsNamed("asynchttpGet").size()
+    app.appButtonHandler("rediscover")
+    assert app.state.discovering
+    assert app.callsNamed("asynchttpGet").size() == gets + 1
+    app.appButtonHandler("rediscover")     // already looking: no second request
+    assert app.callsNamed("asynchttpGet").size() == gets + 1
+    app.discoverDevices([list: [
+        [deviceId: "1", sn: "SN1", model: "DR-HPF008S", deviceName: "Office Fan", seriesName: "PolyFan 508S"],
+        [deviceId: "2", sn: "SN2", model: "DR-HCF007S", deviceName: "Bedroom Fan"],
+    ]], [:])
+    app.discoverRooms([familyRooms: [[rooms: [[roomName: "Office", devices: [[sn: "SN1"]]]]]]], [:])
+    hub.settle()
+    assert !app.state.discovering && app.state.discovered.keySet() == ["SN1", "SN2"] as Set
+}
+
 check("pages render") {
     app.mainPage()
     app.fansPage()
@@ -130,6 +146,45 @@ check("speed number from the 1-12 dropdown: above the top speed uses the top one
     assert sent(from)*.params == [[windlevel: 5], [windlevel: 9]]  // sleep mode stays; only auto is left
     assert f.currentValue("speedLevel") == 9 && f.currentValue("speed") == "high"
     assert f.currentValue("level") == null
+}
+
+check("saved head positions: save, recall by slot or name, delete") {
+    FakeDevice f = child("dreo-SN1")
+    int from = conn().driver.callsNamed("ws.send").size()
+    f.savePosition("1")                    // nothing reported yet
+    assert f.driver.log.at("warn").any { it.contains("no head position reported") }
+    ws([devicesn: "SN1", method: "report", reported: [fixedconf: "-15,10", cruiseconf: "90,60,-30,-60"]])
+    assert f.currentValue("headVertical") == -15 && f.currentValue("headHorizontal") == 10
+    assert f.currentValue("oscillationLeft") == -60
+    f.savePosition("1", "Desk")
+    hub.settle()
+    f.setHeadPosition(30, -40)
+    hub.settle()
+    ack("SN1")
+    assert f.currentValue("headVertical") == 30
+    f.savePosition("2")
+    hub.settle()
+    assert new JsonSlurper().parseText(f.currentValue("savedPositions")) ==
+        ["1": [name: "Desk", vertical: -15, horizontal: 10], "2": [name: "Position 2", vertical: 30, horizontal: -40]]
+    f.goToPosition("1")
+    hub.settle()
+    ack("SN1")
+    f.goToPosition("position 2")           // a rule may use the name
+    hub.settle()
+    ack("SN1")
+    f.goToPosition("3")
+    hub.settle()
+    assert f.driver.log.at("warn").any { it.contains("no saved position 3") }
+    f.deletePosition("1")
+    hub.settle()
+    assert new JsonSlurper().parseText(f.currentValue("savedPositions")).keySet() == ["2"] as Set
+    // The fan is oscillating (oscmode 1 from the first report): positions stop it.
+    assert sent(from)*.params == [[fixedconf: "30,-40", oscmode: 0], [fixedconf: "-15,10"], [fixedconf: "30,-40"]]
+    f.setOscillationRange(-45, 45)
+    hub.settle()
+    ack("SN1")
+    assert sent(from).last().params == [cruiseconf: "90,45,-30,-45"]
+    assert f.currentValue("oscillationRight") == 45
 }
 
 check("bad command input: warning, nothing sent") {
@@ -334,6 +389,18 @@ check("humidifier: discovered with its limits, added with the humidifier driver"
     assert h.data.subMap(["model", "kind", "humidityRange", "mistRange"]) ==
         [model: "DR-HHM001S", kind: "humidifier", humidityRange: "30-80", mistRange: "1-6"]
     app.mainPage()
+    // New limits from a later discovery reach the existing device on Done.
+    Map found = app.state.discovered
+    found.SN5.limits = [humidityRange: "35-85", mistRange: "1-6"]
+    app.state.discovered = found
+    app.updated()
+    hub.settle()
+    assert h.getDataValue("humidityRange") == "35-85"
+    found.SN5.limits = [humidityRange: "30-80", mistRange: "1-6"]
+    app.state.discovered = found
+    app.updated()
+    hub.settle()
+    assert h.getDataValue("humidityRange") == "30-80"
 }
 
 check("humidifier: REST state and pushed reports become events") {

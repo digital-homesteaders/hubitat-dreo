@@ -20,7 +20,8 @@ rings, and DR-HHM humidifiers.
 - **Dreo Cloud Connection** (device) holds the single WebSocket to Dreo's
   cloud. Hubitat only lets drivers open WebSockets, which is why this is a
   device. It receives live state from every fan and sends commands one at a
-  time, waiting for Dreo's acknowledgement.
+  time, waiting for Dreo's acknowledgement. Leave it in place: without it
+  nothing updates or responds (pressing **Done** in the app adds it back).
 - **Dreo Fan** (tower fans, air circulators), **Dreo Ceiling Fan** and
   **Dreo Humidifier** devices.
 - **Dreo Ceiling Light** and **Dreo Light Ring** child devices, created
@@ -58,7 +59,13 @@ room or device names, MAC or IP addresses, Wi-Fi name, or full serial numbers
 into a forum post.
 
 Only an MD5 hash of the password is stored (that is what Dreo's sign-in
-expects); the password field is cleared once it is hashed. North American and
+expects); the password field is cleared once it is hashed. The hash signs in
+to Dreo just like the password would, and it shows on the app's status page
+and in hub backups, so keep those private.
+
+**Choose devices** lists the account's devices each time it opens (at most
+once a minute); **Look again** on that page lists them again straight away,
+for example after adding a device in the Dreo app. North American and
 European accounts are both supported; the region is picked up at sign-in.
 
 ## Devices
@@ -76,7 +83,15 @@ European accounts are both supported; the region is picked up at sign-in.
 | `setPanelSound(on/off)`, `panelSound` | `voiceon` / `muteon` |
 | `setChildLock(on/off)`, `childLock` | `childlockon` |
 | TemperatureMeasurement | `temperature` + `tempoffset`, in the unit set by `tempunit` (1 = °F), shown in the hub's scale |
+| `setHeadPosition(vertical, horizontal)`, `headVertical`, `headHorizontal` | `fixedconf` ("vertical,horizontal"): where the head points when not oscillating, in degrees. Leave one empty to keep it; an oscillating fan stops oscillating. Fans that report it (e.g. DR-HPF004S, DR-HPF008S). |
+| `setOscillationRange(left, right, bottom, top)`, `oscillationLeft` … `oscillationTop` | `cruiseconf` ("top,right,bottom,left"): the oscillation limits, at least 30° apart on each axis; empty keeps a limit |
+| `savePosition(slot, name)`, `goToPosition(slot)`, `deletePosition(slot)`, `savedPositions` | Up to five head positions kept on the Hubitat device (Dreo's cloud has no saved positions). `goToPosition` also takes a saved name, for rules. |
 | `healthStatus` | fan online/offline |
+
+Angles are clamped to the head's range: hass-dreo's per-model ranges (for
+example DR-HPF004S ±75° across, −30° to 90° up), widened to any angle the fan
+reports. The DR-HPF017S and DR-HAF004S need about 8 s between head moves, so a
+newer position sent sooner waits and only the latest one is sent.
 
 Named speeds: fans with 5+ steps use low, medium-low, medium, medium-high and
 high (for 9 steps: 2, 4, 5, 7, 9). Fans with fewer steps use a subset (for 4
@@ -147,7 +162,7 @@ attributes.
 ## Limitations
 
 - Needs Dreo's cloud; there is no local control.
-- Not in v1: oscillation angles and sweep width, head position, on/off timers,
+- Not in v1: preset sweep widths (`shakehorizonangle`), on/off timers,
   schedules, misting, temperature calibration offset, air purifiers, heaters
   and other Dreo devices; on humidifiers, the RGB humidity-indicator light
   (DR-HHM015S), light colours and brightness levels, resetting the filter and
@@ -173,7 +188,8 @@ Hubitat runs) against small stand-ins for the hub, then runs:
 - **MappingTest**: named speeds for 4, 8, 9, 10 and 12 steps; every command's
   Dreo params (speeds incl. auto and leaving auto, step bounds, cycling, modes,
   single- and two-axis oscillation, display incl. `lightmode`, panel sound via
-  `voiceon`/`muteon`, child lock, ceiling light, light ring); the ceiling-fan
+  `voiceon`/`muteon`, child lock, head position and oscillation range with
+  their angle ranges and the 8 s head settle, ceiling light, light ring); the ceiling-fan
   power gate (cases from hass-dreo's `PyDreoCeilingFan`); temperature with
   `tempunit` 0/1, the >50 rule, offsets and °F/°C hubs; RGB/hue round-trips;
   and the events for sample DR-HAF001S, DR-HPF008S (with light ring) and
@@ -181,7 +197,8 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   the DR-HHM001S sample state and its variants (sleep target, paused, empty
   tank), and every humidifier command's params.
 - **DriverFlowTest**: the app and real drivers together, with state passed
-  through JSON as on a hub: discovery and rooms, child creation and removal,
+  through JSON as on a hub: discovery and rooms, **Look again**, child
+  creation and removal, saved head positions,
   WebSocket open/reports/acks, the one-at-a-time command queue, retries and
   reconnect after a missing ack, light ring and ceiling light children, the
   gate on a real command, online/offline, REST refresh, the speed-step
@@ -219,7 +236,9 @@ itself still needs checking.
 3. WebSocket over time: reconnect after a hub reboot (Initialize) or a lost
    network, and the no-acknowledgement reconnect.
 4. DR-HPF008S: oscillation, panel sound, child lock, and leaving Auto mode by
-   setting a speed.
+   setting a speed; the 1–12 speed dropdown; head position, oscillation range
+   and saved positions (and whether a fixed position needs oscillation off,
+   which the app sends).
 5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): that the real state
    keys match the samples in the tests, and each fan does what the params say,
    including `medium` on the 4-step DR-HAF001S. The DR-HTF004S is not in

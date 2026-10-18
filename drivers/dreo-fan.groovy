@@ -4,14 +4,18 @@
  * The device keeps the fan's merged Dreo state; the app turns it into events
  * and turns commands into Dreo control params (see apps/dreo-connect.groovy).
  * Fans with a light ring (e.g. DR-HPF008S) get a "Dreo Light Ring" child.
+ * Saved head positions are kept on this device (Dreo's cloud has no list of them).
  *
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */
 
+import groovy.json.JsonOutput
 import groovy.transform.Field
 
 // Speed numbers for the setSpeedLevel dropdown, which can't vary per fan: Dreo fans have up to 12.
 @Field static final List SPEED_LEVELS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+// Slots for saved head positions.
+@Field static final List POSITION_SLOTS = ["1", "2", "3", "4", "5"]
 
 metadata {
     definition(name: "Dreo Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
@@ -31,6 +35,13 @@ metadata {
         attribute "supportedDisplay", "JSON_OBJECT"
         attribute "panelSound", "string"
         attribute "childLock", "string"
+        attribute "headVertical", "number"
+        attribute "headHorizontal", "number"
+        attribute "oscillationLeft", "number"
+        attribute "oscillationRight", "number"
+        attribute "oscillationBottom", "number"
+        attribute "oscillationTop", "number"
+        attribute "savedPositions", "JSON_OBJECT"
         attribute "healthStatus", "enum", ["online", "offline"]
 
         command "setSpeedLevel", [[name: "Speed (1 to 12)*", type: "ENUM", description: "The speed number as in the Dreo app (maxSpeedLevel is this fan's top one); a number above it uses the top speed", constraints: SPEED_LEVELS]]
@@ -39,6 +50,19 @@ metadata {
         command "setDisplay", [[name: "Display*", type: "ENUM", description: "Display on, off or automatic; this fan's choices are in supportedDisplay", constraints: ["on", "off", "auto"]]]
         command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed (fans with a panelSound attribute)", constraints: ["on", "off"]]]
         command "setChildLock", [[name: "Child lock*", type: "ENUM", description: "Lock the fan's buttons (fans with a childLock attribute)", constraints: ["on", "off"]]]
+        command "setHeadPosition", [
+            [name: "Vertical angle", type: "NUMBER", description: "Degrees up (negative is down); empty keeps it"],
+            [name: "Horizontal angle", type: "NUMBER", description: "Degrees right (negative is left); empty keeps it. Stops oscillation."]]
+        command "setOscillationRange", [
+            [name: "Left", type: "NUMBER", description: "Left limit in degrees (negative); empty keeps it"],
+            [name: "Right", type: "NUMBER", description: "Right limit in degrees; empty keeps it"],
+            [name: "Bottom", type: "NUMBER", description: "Bottom limit in degrees; empty keeps it"],
+            [name: "Top", type: "NUMBER", description: "Top limit in degrees; empty keeps it"]]
+        command "savePosition", [
+            [name: "Slot*", type: "ENUM", description: "Keep the head's current position in this slot", constraints: POSITION_SLOTS],
+            [name: "Name", type: "STRING", description: "Optional, e.g. Desk"]]
+        command "goToPosition", [[name: "Slot*", type: "ENUM", description: "Point the head at a saved position (see savedPositions)", constraints: POSITION_SLOTS]]
+        command "deletePosition", [[name: "Slot*", type: "ENUM", description: "Forget a saved position", constraints: POSITION_SLOTS]]
     }
     preferences {
         input "speedSteps", "number", title: "Number of speed steps (0 = from the model)", defaultValue: 0, range: "0..20"
@@ -74,6 +98,47 @@ def setOscillation(value) { sendDreo("setOscillation", [value]) }
 def setDisplay(value) { sendDreo("setDisplay", [value]) }
 def setPanelSound(value) { sendDreo("setPanelSound", [value]) }
 def setChildLock(value) { sendDreo("setChildLock", [value]) }
+def setHeadPosition(vertical = null, horizontal = null) { sendDreo("setHeadPosition", [vertical, horizontal]) }
+def setOscillationRange(left = null, right = null, bottom = null, top = null) {
+    sendDreo("setOscillationRange", [left, right, bottom, top])
+}
+
+// ---------------------------------------------------------------- saved head positions
+
+def savePosition(slot, name = null) {
+    def v = device.currentValue("headVertical")
+    def h = device.currentValue("headHorizontal")
+    if (v == null || h == null) {
+        log.warn "${device.displayName}: no head position reported, so nothing to save"
+        return
+    }
+    Map saved = state.positions ?: [:]
+    saved[slot.toString()] = [name: name ?: "Position ${slot}".toString(), vertical: v as int, horizontal: h as int]
+    state.positions = saved
+    showPositions()
+}
+
+/** A slot number or a saved position's name (from a rule). */
+def goToPosition(slot) {
+    Map saved = state.positions ?: [:]
+    Map pos = saved[slot?.toString()] ?: saved.values().find { it.name?.equalsIgnoreCase(slot?.toString()) }
+    if (!pos) {
+        log.warn "${device.displayName}: no saved position ${slot}"
+        return
+    }
+    sendDreo("setHeadPosition", [pos.vertical, pos.horizontal])
+}
+
+def deletePosition(slot) {
+    Map saved = state.positions ?: [:]
+    saved.remove(slot?.toString())
+    state.positions = saved
+    showPositions()
+}
+
+private void showPositions() {
+    sendEvent(name: "savedPositions", value: JsonOutput.toJson((state.positions ?: [:]).sort { it.key }))
+}
 
 // Light ring child (component) commands.
 def componentOn(cd) { sendDreo("ring.on") }

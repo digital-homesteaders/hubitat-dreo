@@ -544,6 +544,100 @@ check("dreoEvents: speed-step override and reported step above the table") {
     assert e2.maxSpeedLevel == 6 && json(e2.supportedFanSpeeds).size() == 5 + 3
 }
 
+// ---------------------------------------------------------------- head position and oscillation range
+
+// From hass-dreo's DR-HPF004S and DR-HPF008S state samples.
+@Field Map HPF004S = [poweron: true, windlevel: 3, mode: 1, oscmode: 0, cruiseconf: "90,75,-30,-75", fixedconf: "0,-5"]
+@Field Map HPF008S = [poweron: true, windlevel: 3, mode: 1, oscmode: 0, cruiseconf: "90,60,-30,-60", fixedconf: "-15,10"]
+
+check("confParts") {
+    assert app.confParts("0,-5", 2) == [0, -5]
+    assert app.confParts(" 90, 75,-30,-75 ", 4) == [90, 75, -30, -75]
+    assert app.confParts("90,75,-30,-75,1", 4) == [90, 75, -30, -75]
+    assert app.confParts("1", 2) == null
+    assert app.confParts("a,b", 2) == null
+    assert app.confParts(null, 2) == null
+    assert app.confParts(12, 2) == null
+}
+
+check("profile: head angle ranges from the model, family, defaults and reports") {
+    assert prof("DR-HPF004S").subMap(["h", "v", "settle"]) == [h: [-75, 75], v: [-30, 90], settle: 0]
+    assert prof("DR-HPF008S").subMap(["h", "v"]) == [h: [-60, 60], v: [-30, 90]]  // family vertical, default horizontal
+    assert prof("DR-HTF011S").subMap(["h", "v"]) == [h: [-60, 60], v: [0, 90]]
+    assert prof("DR-HPF017S").settle == 8 && prof("DR-HAF004S").settle == 8
+    // A fan reporting an angle beyond the table widens it.
+    assert prof("DR-HPF008S", [fixedconf: "-40,70"]).subMap(["h", "v"]) == [h: [-60, 70], v: [-40, 90]]
+    assert prof("DR-HPF008S", [cruiseconf: "95,60,-30,-80"]).subMap(["h", "v"]) == [h: [-80, 60], v: [-30, 95]]
+}
+
+check("dreoEvents: head position and oscillation limits") {
+    Map e = events("DR-HPF004S", HPF004S)
+    assert e.subMap(["headVertical", "headHorizontal", "oscillationTop", "oscillationRight", "oscillationBottom", "oscillationLeft"]) ==
+        [headVertical: 0, headHorizontal: -5, oscillationTop: 90, oscillationRight: 75, oscillationBottom: -30, oscillationLeft: -75]
+    assert app.dreoEvents(fan("DR-HPF004S"), HPF004S).find { it.name == "headVertical" }.unit == "°"
+    Map none = events("DR-HAF001S", [poweron: true, windlevel: 2, mode: 1, hoscon: false])
+    assert !none.keySet().any { it.startsWith("head") || it.startsWith("oscillationT") }
+    assert !events("DR-HPF004S", HPF004S + [fixedconf: "junk"]).containsKey("headVertical")
+}
+
+check("setHeadPosition: both, one, clamped, and stopping oscillation") {
+    assert cmd("DR-HPF004S", HPF004S, "setHeadPosition", [30, 20]) == [fixedconf: "30,20"]
+    assert cmd("DR-HPF004S", HPF004S, "setHeadPosition", [null, 40]) == [fixedconf: "0,40"]
+    assert cmd("DR-HPF004S", HPF004S, "setHeadPosition", [45]) == [fixedconf: "45,-5"]
+    assert cmd("DR-HPF004S", HPF004S, "setHeadPosition", ["", "-20"]) == [fixedconf: "0,-20"]
+    assert cmd("DR-HPF004S", HPF004S, "setHeadPosition", [120, -100]) == [fixedconf: "90,-75"]
+    assert cmd("DR-HPF008S", HPF008S, "setHeadPosition", [-45, 0]) == [fixedconf: "-30,0"]
+    // Oscillating: a fixed position switches oscillation off.
+    assert cmd("DR-HPF004S", HPF004S + [oscmode: 3], "setHeadPosition", [10, 10]) == [fixedconf: "10,10", oscmode: 0]
+    assert cmd("DR-HPF004S", HPF004S.findAll { it.key != "oscmode" } + [hoscon: true, voscon: false], "setHeadPosition", [10, 10]) ==
+        [fixedconf: "10,10", hoscon: false, voscon: false]
+    throwsIAE { cmd("DR-HAF001S", [poweron: true, hoscon: false], "setHeadPosition", [10, 10]) }
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setHeadPosition", ["up", 10]) }
+}
+
+check("setOscillationRange: limits, kept values, clamp and minimum span") {
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationRange", [-45, 45, 0, 60]) == [cruiseconf: "60,45,0,-45"]
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationRange", [-30]) == [cruiseconf: "90,75,-30,-30"]
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationRange", [null, null, null, 45]) == [cruiseconf: "45,75,-30,-75"]
+    assert cmd("DR-HPF008S", HPF008S, "setOscillationRange", [-90, 90]) == [cruiseconf: "90,60,-30,-60"]
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setOscillationRange", [0, 20]) }
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setOscillationRange", [null, null, 40, 60]) }
+    throwsIAE { cmd("DR-HTF011S", ON9, "setOscillationRange", [-30, 30]) }
+}
+
+check("head position waits for the head to settle on DR-HPF017S") {
+    def sent = []
+    def conn = new FakeDevice(deviceNetworkId: "dreo-connection-${app.app.id}", name: "conn")
+    conn.metaClass.sendCommand = { String sn, Map p -> sent << [sn, p] }
+    app.children = [conn]
+    FakeDevice cd = new FakeDevice(id: 7, deviceNetworkId: "dreo-SN7", name: "DR-HPF017S", data: [model: "DR-HPF017S", sn: "SN7"])
+    Map s = [poweron: true, oscmode: 0, fixedconf: "0,0", cruiseconf: "90,75,-30,-75"]
+    int timers = app.callsNamed("runInMillis").size()
+    assert app.dreoCommand(cd, s, "setHeadPosition", [10, 10]) == [fixedconf: "10,10"]
+    assert sent*.get(1) == [[fixedconf: "10,10"]]
+    // Within 8 s: shown straight away, but held; a newer one replaces it.
+    assert app.dreoCommand(cd, s, "setHeadPosition", [20, 20]) == [fixedconf: "20,20"]
+    assert app.dreoCommand(cd, s, "setHeadPosition", [30, 30]) == [fixedconf: "30,30"]
+    assert sent.size() == 1
+    List t = app.callsNamed("runInMillis").drop(timers)
+    assert t*.get(2).unique() == ["flushHead"] && t[0][1] > 7000
+    // Too early: waits again; after the settle time the newest goes out once.
+    app.flushHead(t[0][3].data)
+    assert sent.size() == 1
+    hub.advance(8100)
+    app.flushHead(t[0][3].data)
+    app.flushHead(t[0][3].data)
+    assert sent*.get(1) == [[fixedconf: "10,10"], [fixedconf: "30,30"]]
+    // Other commands are never held.
+    app.dreoCommand(cd, s, "setSpeedLevel", [3])
+    assert sent.size() == 3
+    // DR-HPF004S has no settle time.
+    app.dreoCommand(fan("DR-HPF004S"), HPF004S, "setHeadPosition", [5, 5])
+    app.dreoCommand(fan("DR-HPF004S"), HPF004S, "setHeadPosition", [6, 6])
+    assert sent.size() == 5
+    app.children = []
+}
+
 // ---------------------------------------------------------------- humidifiers
 
 // A humidifier device as the driver passes it, with data values from discovery.

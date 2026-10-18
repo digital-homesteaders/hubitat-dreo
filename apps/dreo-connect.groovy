@@ -89,13 +89,15 @@ preferences {
 @Field static final Map FAMILIES = [
     "DR-HTF": [kind: "tower", speed: [1, 9], modes: "basic"],
     "DR-HAF": [kind: "circulator", speed: [1, 9], modes: "basic"],
-    "DR-HPF": [kind: "circulator", speed: [1, 9], modes: "basic"],
+    "DR-HPF": [kind: "circulator", speed: [1, 9], modes: "basic", v: [-30, 90]],
     "DR-HCF": [kind: "ceiling", speed: [1, 12], modes: "ceiling"],
     "DR-HHM": [kind: "humidifier", modes: "humidifier"],
 ]
 
 // Per-model details, from hass-dreo's pydreo/models.py. `ring` is the light
-// ring's brightness range (atmbri) where it differs from 1-5.
+// ring's brightness range (atmbri) where it differs from 1-5. `h`/`v` are the
+// head's horizontal and vertical angle ranges (degrees) where hass-dreo gives
+// them; `settle` is the seconds a head needs between position commands.
 @Field static final Map MODELS = [
     "DR-HTF007S": [speed: [1, 8]],
     "DR-HTF011S": [speed: [1, 9]],
@@ -106,16 +108,18 @@ preferences {
     "DR-HTF024S": [speed: [1, 9]],
     "DR-HTF518S": [speed: [1, 9]],
     "DR-HAF001S": [speed: [1, 4]],
+    // Rejects a new head position while the head still moves; stacked rejects can need recalibration.
+    "DR-HAF004S": [settle: 8],
     "DR-HAF008S": [speed: [1, 9], modes: "turbo"],
-    "DR-HPF004S": [speed: [1, 9], modes: "custom"],
-    "DR-HPF005S": [speed: [1, 10], modes: "custom"],
-    "DR-HPF007S": [speed: [1, 10], modes: "custom"],
-    "DR-HPF008S": [speed: [1, 9], modes: "turbo", ring: [1, 3]],
-    "DR-HPF015S": [speed: [1, 12], modes: "custom"],
-    "DR-HPF017S": [speed: [1, 12], modes: "swappedCustom"],
-    "DR-HPF020S": [speed: [1, 9], modes: "custom"],
-    "DR-HPF022S": [speed: [1, 9], modes: "turbo"],
-    "DR-HPF025S": [speed: [1, 9], modes: "swapped"],
+    "DR-HPF004S": [speed: [1, 9], modes: "custom", h: [-75, 75], v: [-30, 90]],
+    "DR-HPF005S": [speed: [1, 10], modes: "custom", h: [-60, 60]],
+    "DR-HPF007S": [speed: [1, 10], modes: "custom", h: [-75, 75], v: [-30, 90]],
+    "DR-HPF008S": [speed: [1, 9], modes: "turbo", ring: [1, 3], v: [-30, 90]],
+    "DR-HPF015S": [speed: [1, 12], modes: "custom", h: [-75, 75], v: [0, 90]],
+    "DR-HPF017S": [speed: [1, 12], modes: "swappedCustom", h: [-75, 75], v: [-30, 90], settle: 8],
+    "DR-HPF020S": [speed: [1, 9], modes: "custom", h: [-60, 60], v: [-30, 90]],
+    "DR-HPF022S": [speed: [1, 9], modes: "turbo", h: [-60, 60], v: [-30, 90]],
+    "DR-HPF025S": [speed: [1, 9], modes: "swapped", h: [-60, 60], v: [-30, 90]],
     "DR-HCF001S": [speed: [1, 12]],
     "DR-HCF002S": [speed: [1, 12]],
     "DR-HCF007S": [speed: [1, 12], ring: [1, 100]],
@@ -146,6 +150,15 @@ preferences {
 // Ceiling light colortemp 0..100 spans 2700 K (warm) to 6500 K (cool).
 @Field static final int CT_WARM = 2700
 @Field static final int CT_COOL = 6500
+// Head angle ranges when neither the model table nor the family gives one (as the Homey app).
+@Field static final List ANGLES_H = [-60, 60]
+@Field static final List ANGLES_V = [0, 90]
+// Oscillation limits on one axis must be at least this many degrees apart (hass-dreo).
+@Field static final int MIN_OSC_SPAN = 30
+// When each fan last got a head position, and the newest one waiting for the
+// head to settle, keyed by serial number (models with `settle`). Shared by
+// every execution of this app, since state is read once per execution.
+@Field static final ConcurrentHashMap<String, Map> HEAD = new ConcurrentHashMap<>()
 // Humidifier ranges when the device list's controlsConf doesn't give them (hass-dreo's defaults).
 @Field static final List HUM_TARGET_RANGE = [30, 90]
 @Field static final List HUM_MIST_RANGE = [1, 6]
@@ -161,7 +174,9 @@ def mainPage() {
             input "email", "email", title: "Email", required: true, submitOnChange: true
             input "password", "password", title: state.passwordHash ? "Password (saved; enter again to change)" : "Password",
                 required: false, submitOnChange: true
-            paragraph "Only an MD5 hash of the password is kept, which is what Dreo's sign-in expects."
+            paragraph "Only an MD5 hash of the password is kept, which is what Dreo's sign-in expects. " +
+                "The hash signs in to Dreo just like the password, and it shows on this app's status page " +
+                "and in hub backups, so keep those private."
             if (state.status) paragraph "<b>Status:</b> ${state.status}"
         }
         if (settings.email && state.passwordHash) {
@@ -174,7 +189,11 @@ def mainPage() {
                         "(${cd.getDataValue('model')}, ${cd.currentValue('healthStatus') ?: 'unknown'})"
                 }
                 def conn = getConnection()
-                if (conn) paragraph "Cloud connection: ${conn.currentValue('connection') ?: 'unknown'}"
+                if (conn) {
+                    paragraph "Cloud connection: ${conn.currentValue('connection') ?: 'unknown'}. The " +
+                        "'Dreo Cloud Connection' device carries live updates and commands for all of these; " +
+                        "leave it in place (pressing Done adds it back if it is deleted)."
+                }
             }
         }
         section("Logging") {
@@ -219,6 +238,10 @@ def fansPage() {
                 paragraph "No fans or humidifiers found on this Dreo account."
             }
             if (state.unsupported) paragraph "Not supported yet: ${state.unsupported.join(', ')}"
+            if (!started) {
+                input name: "rediscover", type: "button", title: "Look again"
+                paragraph "Lists the Dreo account's devices again, e.g. after adding one in the Dreo app."
+            }
         }
     }
 }
@@ -296,6 +319,10 @@ private void syncChildren() {
         }
     }
     getFanDevices().each { cd ->
+        // Limits read at discovery (humidifier ranges) also reach devices added earlier.
+        (found[cd.getDataValue("sn")]?.limits ?: [:]).each { k, v ->
+            if (cd.getDataValue(k) != v) cd.updateDataValue(k, v)
+        }
         if (!(cd.getDataValue("sn") in selected)) {
             log.info "Dreo: removing ${cd.displayName}"
             deleteChildDevice(cd.deviceNetworkId)
@@ -559,6 +586,10 @@ def discoverRooms(data, Map ctx) {
 // ---------------------------------------------------------------- raw data dump
 
 def appButtonHandler(String btn) {
+    if (btn == "rediscover") {
+        if (!state.discovering) startDiscovery()
+        return
+    }
     if (btn == "dumpRaw") {
         log.info "Dreo: logging raw Dreo data"
         apiGet(PATH_DEVICES, [acceptLanguage: "en", method: "devices", pageNo: 1, pageSize: 100], "dumpDevices")
@@ -703,6 +734,20 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
     }
 
     if (p.kind != "ceiling") {
+        // fixedconf "vertical,horizontal": where the head points when not oscillating.
+        List head = confParts(s.fixedconf, 2)
+        if (head) {
+            ev << [name: "headVertical", value: head[0], unit: "°"]
+            ev << [name: "headHorizontal", value: head[1], unit: "°"]
+        }
+        // cruiseconf "top,right,bottom,left": the oscillation limits.
+        List limits = confParts(s.cruiseconf, 4)
+        if (limits) {
+            ev << [name: "oscillationTop", value: limits[0], unit: "°"]
+            ev << [name: "oscillationRight", value: limits[1], unit: "°"]
+            ev << [name: "oscillationBottom", value: limits[2], unit: "°"]
+            ev << [name: "oscillationLeft", value: limits[3], unit: "°"]
+        }
         String display = displayOf(s)
         if (display) {
             ev << [name: "display", value: display]
@@ -748,8 +793,55 @@ Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
         return null
     }
     logDebug "${cd.displayName}: ${cmd} ${args} -> ${params}"
-    conn.sendCommand(cd.getDataValue("sn"), params)
+    String sn = cd.getDataValue("sn")
+    if (params.containsKey("fixedconf") && p.settle && !headReady(sn, p.settle as int, params)) return params
+    conn.sendCommand(sn, params)
     return params
+}
+
+private Map head(String sn) {
+    HEAD.putIfAbsent(sn, [:])
+    return HEAD.get(sn)
+}
+
+/**
+ * Whether a head position can go now. If the head may still be moving, keep
+ * only the newest position and send it once the settle time is up.
+ */
+private boolean headReady(String sn, int settle, Map params) {
+    Map h = head(sn)
+    long wait
+    synchronized (h) {
+        wait = ((h.at ?: 0L) as long) + settle * 1000L - now()
+        if (wait <= 0 && !h.pending) {
+            h.at = now()
+            return true
+        }
+        h.pending = params
+    }
+    runInMillis(Math.max(wait, 0L), "flushHead", [data: [sn: sn, settle: settle], overwrite: false])
+    logDebug "head position for ${sn} waits ${wait} ms for the head to settle"
+    return false
+}
+
+def flushHead(Map data) {
+    Map h = head(data.sn as String)
+    Map params
+    long wait
+    synchronized (h) {
+        if (!h.pending) return
+        wait = ((h.at ?: 0L) as long) + (data.settle as int) * 1000L - now()
+        if (wait <= 0) {
+            params = h.pending
+            h.remove("pending")
+            h.at = now()
+        }
+    }
+    if (wait > 0) {
+        runInMillis(wait, "flushHead", [data: data, overwrite: false])
+        return
+    }
+    getConnection()?.sendCommand(data.sn as String, params)
 }
 
 // ---------------------------------------------------------------- pure mapping logic
@@ -775,11 +867,30 @@ private Map profile(String model, Map s, Map opts) {
     String powerKey = (kind == "ceiling" && s.containsKey("fanon")) ? "fanon"
         : s.containsKey("poweron") ? "poweron" : s.containsKey("fanon") ? "fanon" : "poweron"
     String modeKey = s.containsKey("mode") ? "mode" : s.containsKey("windtype") ? "windtype" : "mode"
+    // Head angle ranges, widened to any angle the fan itself reports.
+    List h = [] + (m.h ?: fam.h ?: ANGLES_H)
+    List v = [] + (m.v ?: fam.v ?: ANGLES_V)
+    List head = confParts(s.fixedconf, 2)
+    List osc = confParts(s.cruiseconf, 4)
+    [head ? head[1] : null, osc ? osc[1] : null, osc ? osc[3] : null].findAll { it != null }.each { int a ->
+        h = [Math.min(h[0] as int, a), Math.max(h[1] as int, a)]
+    }
+    [head ? head[0] : null, osc ? osc[0] : null, osc ? osc[2] : null].findAll { it != null }.each { int a ->
+        v = [Math.min(v[0] as int, a), Math.max(v[1] as int, a)]
+    }
     return [
         kind: kind, min: min, max: max, steps: max - min + 1,
         modes: MODE_LISTS[m.modes ?: fam.modes], powerKey: powerKey, modeKey: modeKey,
-        ring: m.ring ?: [1, 5],
+        ring: m.ring ?: [1, 5], h: h, v: v, settle: m.settle ?: 0,
     ]
+}
+
+/** The first `n` numbers of a "a,b,..." Dreo value, or null if it has fewer. */
+List confParts(def conf, int n) {
+    if (!(conf instanceof String)) return null
+    List parts = conf.split(",").collect { it.trim() }
+    if (parts.size() < n || !parts.take(n).every { it ==~ /-?\d+/ }) return null
+    return parts.take(n).collect { it as int }
 }
 
 /** On a ceiling fan a load is live only when poweron and its own key are both true. */
@@ -998,6 +1109,30 @@ private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
             if (s.containsKey("voiceon")) return [voiceon: sound]
             if (s.containsKey("muteon")) return [muteon: !sound]
             throw new IllegalArgumentException("this fan has no panel sound setting")
+        case "setHeadPosition":
+            List head = confParts(s.fixedconf, 2)
+            if (!head || p.kind == "ceiling") throw new IllegalArgumentException("this fan has no head position setting")
+            int vert = args.size() > 0 && args[0] != null && args[0] != "" ? clamp(intArg(args[0], "vertical angle"), p.v[0], p.v[1]) : head[0]
+            int horiz = args.size() > 1 && args[1] != null && args[1] != "" ? clamp(intArg(args[1], "horizontal angle"), p.h[0], p.h[1]) : head[1]
+            Map params = [fixedconf: "${vert},${horiz}".toString()]
+            // A fixed position means not oscillating: the head would otherwise keep sweeping.
+            String osc = oscillationOf(s)
+            if (osc && osc != "off") params += oscillationParams(s, "off")
+            return params
+        case "setOscillationRange":
+            List osc = confParts(s.cruiseconf, 4)
+            if (!osc || p.kind == "ceiling") throw new IllegalArgumentException("this fan has no oscillation range setting")
+            // Arguments: left, right, bottom, top; an empty one keeps that limit.
+            Closure<Integer> arg = { int i, int cur, List range, String what ->
+                args.size() > i && args[i] != null && args[i] != "" ? clamp(intArg(args[i], what), range[0], range[1]) : cur
+            }
+            int left = arg(0, osc[3], p.h, "left angle")
+            int right = arg(1, osc[1], p.h, "right angle")
+            int bottom = arg(2, osc[2], p.v, "bottom angle")
+            int top = arg(3, osc[0], p.v, "top angle")
+            if (right - left < MIN_OSC_SPAN) throw new IllegalArgumentException("left and right must be at least ${MIN_OSC_SPAN}° apart")
+            if (top - bottom < MIN_OSC_SPAN) throw new IllegalArgumentException("bottom and top must be at least ${MIN_OSC_SPAN}° apart")
+            return [cruiseconf: "${top},${right},${bottom},${left}".toString()]
         case "setChildLock":
             if (!s.containsKey("childlockon")) throw new IllegalArgumentException("this fan has no child lock")
             return [childlockon: onOffArg(a, "child lock")]
