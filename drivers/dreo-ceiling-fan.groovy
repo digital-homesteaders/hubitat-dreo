@@ -11,12 +11,16 @@
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */
 
+import groovy.transform.Field
+
+// Speed numbers for the setSpeedLevel dropdown, which can't vary per fan: Dreo fans have up to 12.
+@Field static final List SPEED_LEVELS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+
 metadata {
     definition(name: "Dreo Ceiling Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
         capability "Actuator"
         capability "Switch"
         capability "FanControl"
-        capability "SwitchLevel"
         capability "Refresh"
 
         attribute "speedLevel", "number"
@@ -27,7 +31,7 @@ metadata {
         attribute "childLock", "string"
         attribute "healthStatus", "enum", ["online", "offline"]
 
-        command "setSpeedLevel", [[name: "Speed level*", type: "NUMBER", description: "Fan step, 1 to maxSpeedLevel (0 = off)"]]
+        command "setSpeedLevel", [[name: "Speed (1 to 12)*", type: "ENUM", description: "The speed number as in the Dreo app (maxSpeedLevel is this fan's top one); a number above it uses the top speed", constraints: SPEED_LEVELS]]
         command "setMode", [[name: "Mode*", type: "ENUM", description: "Fan mode to set", constraints: ["normal", "natural", "sleep", "reverse"]]]
         command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed", constraints: ["on", "off"]]]
         command "setChildLock", [[name: "Child lock*", type: "ENUM", description: "Lock the fan's buttons", constraints: ["on", "off"]]]
@@ -62,8 +66,6 @@ def on() { sendDreo("on") }
 def off() { sendDreo("off") }
 def setSpeed(speed) { sendDreo("setSpeed", [speed]) }
 def cycleSpeed() { sendDreo("cycleSpeed") }
-// The app snaps the level to the step the fan lands on.
-def setLevel(level, duration = null) { sendDreo("setLevel", [level]) }
 def setSpeedLevel(level) { sendDreo("setSpeedLevel", [level]) }
 def setMode(mode) { sendDreo("setMode", [mode]) }
 def setPanelSound(value) { sendDreo("setPanelSound", [value]) }

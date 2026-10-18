@@ -171,39 +171,23 @@ check("setSpeedLevel bounds") {
     assert cmd("DR-HTF011S", ON9, "setSpeedLevel", [4.0G]) == [windlevel: 4]
     assert cmd("DR-HTF011S", ON9, "setSpeedLevel", ["4"]) == [windlevel: 4]
     assert cmd("DR-HTF011S", OFF9, "setSpeedLevel", [4]) == [poweron: true, windlevel: 4]
-    throwsIAE { cmd("DR-HTF011S", ON9, "setSpeedLevel", [10]) }
-    throwsIAE { cmd("DR-HAF001S", [poweron: true], "setSpeedLevel", [5]) }
+    // The dropdown offers 1-12 for every fan: above the top speed means the top speed.
+    assert cmd("DR-HTF011S", ON9, "setSpeedLevel", [10]) == [windlevel: 9]
+    assert cmd("DR-HTF011S", ON9, "setSpeedLevel", ["12"]) == [windlevel: 9]
+    assert cmd("DR-HAF001S", [poweron: true], "setSpeedLevel", [5]) == [windlevel: 4]
+    assert cmd("DR-HCF001S", [poweron: true, fanon: true], "setSpeedLevel", ["12"]) == [windlevel: 12]
+    throwsIAE { cmd("DR-HTF011S", ON9, "setSpeedLevel", ["fast"]) }
 }
 
 check("setSpeedLevel with a speed-step override") {
-    throwsIAE { cmd("DR-HTF011S", ON9, "setSpeedLevel", [5], [speedSteps: 4]) }
+    assert cmd("DR-HTF011S", ON9, "setSpeedLevel", [5], [speedSteps: 4]) == [windlevel: 4]
     assert cmd("DR-HTF011S", ON9, "setSpeedLevel", [4], [speedSteps: 4]) == [windlevel: 4]
 }
 
-check("setLevel: percent to the nearest step, like Homey's fan speed") {
-    assert cmd("DR-HTF011S", ON9, "setLevel", [100]) == [windlevel: 9]
-    assert cmd("DR-HTF011S", ON9, "setLevel", [50]) == [windlevel: 5]
-    assert cmd("DR-HTF011S", ON9, "setLevel", [10]) == [windlevel: 1]
-    assert cmd("DR-HTF011S", ON9, "setLevel", [1]) == [windlevel: 1]
-    assert cmd("DR-HTF011S", ON9, "setLevel", [150]) == [windlevel: 9]
-    assert cmd("DR-HTF011S", ON9, "setLevel", [33.4G]) == [windlevel: 3]
-    assert cmd("DR-HTF011S", ON9, "setLevel", [0]) == [poweron: false]
-    assert cmd("DR-HTF011S", OFF9, "setLevel", [50]) == [poweron: true, windlevel: 5]
-    assert cmd("DR-HTF011S", AUTO9, "setLevel", [50]) == [windlevel: 5, mode: 1]
-    assert cmd("DR-HAF001S", [poweron: true, mode: 1], "setLevel", [25]) == [windlevel: 1]
-    assert cmd("DR-HAF001S", [poweron: true, mode: 1], "setLevel", [60]) == [windlevel: 2]
-    assert cmd("DR-HCF001S", [poweron: true, fanon: true], "setLevel", [50]) == [windlevel: 6]
-}
-
-check("level events: always the step's own share") {
-    Map s = [poweron: true, windlevel: 5, mode: 1]
-    assert events("DR-HTF011S", s).level == 56
-    assert events("DR-HTF011S", s, [level: 50]).level == 56
-    assert events("DR-HTF011S", [poweron: true, windlevel: 1, mode: 1]).level == 11
-    assert events("DR-HAF001S", [poweron: true, windlevel: 2, mode: 1]).level == 50
-    // Off keeps the level, like a dimmer.
-    assert events("DR-HTF011S", [poweron: false, windlevel: 5, mode: 1]).level == 56
-    assert !events("DR-HTF011S", [poweron: true, mode: 1]).containsKey("level")
+check("no percent level on fans: speed is a number") {
+    Map e = events("DR-HTF011S", [poweron: true, windlevel: 5, mode: 1])
+    assert !e.containsKey("level") && e.speedLevel == 5
+    throwsIAE { cmd("DR-HTF011S", ON9, "setLevel", [50]) }
 }
 
 check("cycleSpeed") {
@@ -472,7 +456,7 @@ check("dreoEvents: DR-HAF001S (4 steps, single-axis oscillation)") {
     assert e.remove("supportedModes").with { json(it) } == ["normal", "natural", "sleep", "auto"]
     assert json(e.remove("supportedOscillation")) == ["off", "on"]
     assert json(e.remove("supportedDisplay")) == ["off", "on"]
-    assert e == [switch: "on", maxSpeedLevel: 4, speedLevel: 3, level: 75, speed: "medium-high", mode: "normal",
+    assert e == [switch: "on", maxSpeedLevel: 4, speedLevel: 3, speed: "medium-high", mode: "normal",
                  oscillation: "on", display: "off", panelSound: "off", childLock: "on", temperature: 72.0G]
 }
 
@@ -502,7 +486,7 @@ check("dreoEvents: DR-HPF008S with light ring (atm* keys)") {
     assert json(e.remove("ring.lightEffects")) == ["1": "constant", "2": "circle", "3": "breath"]
     assert json(e.remove("supportedOscillation")) == ["off", "horizontal", "vertical", "both"]
     assert json(e.remove("supportedDisplay")) == ["off", "on", "auto"]
-    assert e == [switch: "on", maxSpeedLevel: 9, speedLevel: 9, level: 100, speed: "high", mode: "turbo",
+    assert e == [switch: "on", maxSpeedLevel: 9, speedLevel: 9, speed: "high", mode: "turbo",
                  oscillation: "both", display: "auto", panelSound: "off", childLock: "off", temperature: 71.6G,
                  "ring.switch": "on", "ring.level": 67, "ring.RGB": "#00FF00", "ring.color": "#00FF00",
                  "ring.hue": 33, "ring.saturation": 100, "ring.colorMode": "RGB", "ring.effectName": "circle"]
@@ -534,7 +518,7 @@ check("dreoEvents: DR-HCF ceiling fan, gate open") {
     assert json(e.remove("supportedFanSpeeds")) == FIVE + ["on", "off"]  // no auto mode
     assert json(e.remove("supportedModes")) == ["normal", "natural", "sleep", "reverse"]
     e.remove("ring.lightEffects")
-    assert e == [switch: "on", maxSpeedLevel: 12, speedLevel: 6, level: 50, speed: "medium", mode: "reverse",
+    assert e == [switch: "on", maxSpeedLevel: 12, speedLevel: 6, speed: "medium", mode: "reverse",
                  panelSound: "on", childLock: "off",
                  "light.switch": "on", "light.level": 80, "light.colorTemperature": 4600, "light.colorName": "Neutral White",
                  "ring.switch": "on", "ring.level": 50, "ring.RGB": "#FF0000", "ring.color": "#FF0000",

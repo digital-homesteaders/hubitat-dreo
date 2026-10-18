@@ -684,8 +684,6 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
     if (s.windlevel instanceof Number) {
         int level = s.windlevel as int
         ev << [name: "speedLevel", value: level]
-        // Always the step's own share, so a slider snaps to speeds the fan has.
-        ev << [name: "level", value: percentForStep(p, level), unit: "%"]
         String speed = on == false ? "off" : (modeId == "auto" ? "auto" : speedNameFor(p, level))
         ev << [name: "speed", value: speed]
     } else if (on == false) {
@@ -751,11 +749,6 @@ Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
     }
     logDebug "${cd.displayName}: ${cmd} ${args} -> ${params}"
     conn.sendCommand(cd.getDataValue("sn"), params)
-    if (cmd == "setLevel" && params.windlevel instanceof Number) {
-        // Fans only have whole steps. Send the step's own percentage even when
-        // unchanged, so a slider left between two steps snaps back.
-        cd.sendEvent(name: "level", value: percentForStep(p, params.windlevel as int), unit: "%", isStateChange: true)
-    }
     return params
 }
 
@@ -821,11 +814,6 @@ List speedNames(int steps) {
 int levelForSpeed(int i, int min, int steps) {
     int n = speedNames(steps).size()
     return min + Math.max(0, (int) Math.round(((i + 1) * steps) / (double) n) - 1)
-}
-
-/** A fan step as a percentage of the top step, like Homey's fan speed. */
-int percentForStep(Map p, int step) {
-    return (int) Math.round(step * 100d / p.max)
 }
 
 /** A percentage as the nearest step the fan has. */
@@ -963,13 +951,11 @@ private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
         case "on": return power(true)
         case "off": return power(false)
         case "setSpeedLevel":
-            int level = a as int
+            int level = intArg(a, "speed")
             if (level <= 0) return power(false)
-            if (level < p.min || level > p.max) throw new IllegalArgumentException("speed level must be ${p.min}-${p.max}")
-            return wake(speedParams(p, s, level))
-        case "setLevel":
-            if ((a as double) <= 0) return power(false)
-            return wake(speedParams(p, s, stepForPercent(p, a)))
+            // The dropdown offers 1-12 for every fan: a number above this fan's
+            // top speed uses its top one, as with Govee fans.
+            return wake(speedParams(p, s, Math.max(p.min as int, Math.min(p.max as int, level))))
         case "setSpeed":
             String speed = a?.toString()
             if (speed == "off") return power(false)

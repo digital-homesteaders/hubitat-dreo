@@ -69,8 +69,7 @@ European accounts are both supported; the region is picked up at sign-in.
 | --- | --- |
 | Switch | `poweron` |
 | FanControl `setSpeed(low … high / on / off / auto)` | `windlevel`; named speeds are spread evenly over the fan's steps. `auto` selects the fan's Auto mode. |
-| SwitchLevel `setLevel(%)`, `level` | `windlevel` as a percentage of the top step, like Homey's fan speed: step 5 of 9 is 56 %; a percentage picks the nearest step; 0 % turns the fan off |
-| `setSpeedLevel(n)`, `speedLevel`, `maxSpeedLevel` | the exact step, 1..N |
+| `setSpeedLevel(1 … 12)`, `speedLevel`, `maxSpeedLevel` | `windlevel`, the speed number as in the Dreo app. The dropdown offers 1–12 for every fan; a number above the fan's top speed (`maxSpeedLevel`) uses the top speed, and 0 (from a rule) turns the fan off. |
 | `setMode(mode)`, `mode`, `supportedModes` | `mode` / `windtype`: normal, natural, sleep, auto, turbo, custom (per model) |
 | `setOscillation(off/on/horizontal/vertical/both)`, `oscillation`, `supportedOscillation` | `shakehorizon` / `oscon` / `hoscon`, or `oscmode` / `hoscon`+`voscon` on two-axis fans |
 | `setDisplay(on/off/auto)`, `display`, `supportedDisplay` | `ledkepton` / `ledalwayson` / `lighton`, or `lightmode` |
@@ -94,11 +93,9 @@ attributes show which ones this fan has; any other choice is ignored with a
 warning in **Logs**. Panel sound and child lock only work on fans that show a
 `panelSound` or `childLock` attribute.
 
-The level always shows the step the fan is really on, so a slider snaps to
-the nearest speed the fan has (50 % on a 9-step fan becomes step 5, shown as
-56 %). Because fans have
-SwitchLevel, some apps and voice assistants may offer them as dimmers; pick
-the fan device type where the integration asks.
+Fans have no percentage level (SwitchLevel), as with the Govee integration:
+speed is the Dreo app's number, so voice assistants and dashboards see a fan,
+not a dimmer.
 
 If a model's speed range is wrong, set **Number of speed steps** in the fan's
 preferences. A fan reporting a higher step than expected also widens the range
@@ -106,7 +103,7 @@ by itself.
 
 ### Dreo Ceiling Fan
 
-Switch, FanControl and SwitchLevel (speed as a percentage) drive the fan motor (`fanon`), with modes normal,
+Switch, FanControl and the 1–12 speed number drive the fan motor (`fanon`), with modes normal,
 natural, sleep and reverse. The main light becomes a **Dreo Ceiling Light**
 child (Switch, SwitchLevel, ColorTemperature 2700–6500 K). Ceiling fans put
 every load behind a `poweron` gate; the app adds the gate keys to each command
