@@ -127,7 +127,7 @@ private void emit(Map e) {
     // Most of each report is unchanged: skip those values rather than send them.
     boolean same = device.currentValue(e.name)?.toString() == e.value?.toString()
     if (same && !e.isStateChange) return
-    if (txtEnable && !same && !(e.name in ["supportedFanSpeeds", "supportedModes", "maxSpeedLevel"])) {
+    if (txtEnable && !same && !(e.name.startsWith("supported") || e.name == "maxSpeedLevel")) {
         e.descriptionText = "${device.displayName} ${e.name} is ${e.value}${e.unit ?: ''}"
         log.info e.descriptionText
     }

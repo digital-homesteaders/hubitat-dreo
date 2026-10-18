@@ -22,17 +22,19 @@ metadata {
         attribute "mode", "string"
         attribute "supportedModes", "JSON_OBJECT"
         attribute "oscillation", "string"
+        attribute "supportedOscillation", "JSON_OBJECT"
         attribute "display", "string"
+        attribute "supportedDisplay", "JSON_OBJECT"
         attribute "panelSound", "string"
         attribute "childLock", "string"
         attribute "healthStatus", "enum", ["online", "offline"]
 
         command "setSpeedLevel", [[name: "Speed level*", type: "NUMBER", description: "Fan step, 1 to maxSpeedLevel (0 = off)"]]
-        command "setMode", [[name: "Mode*", type: "ENUM", description: "Fan mode to set", constraints: ["normal", "natural", "sleep", "auto", "turbo", "custom"]]]
-        command "setOscillation", [[name: "Oscillation*", type: "ENUM", description: "Oscillation to set", constraints: ["off", "on", "horizontal", "vertical", "both"]]]
-        command "setDisplay", [[name: "Display*", type: "ENUM", description: "Display on, off or automatic", constraints: ["on", "off", "auto"]]]
-        command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed", constraints: ["on", "off"]]]
-        command "setChildLock", [[name: "Child lock*", type: "ENUM", description: "Lock the fan's buttons", constraints: ["on", "off"]]]
+        command "setMode", [[name: "Mode*", type: "ENUM", description: "Fan mode to set; this fan's modes are in supportedModes", constraints: ["normal", "natural", "sleep", "auto", "turbo", "custom"]]]
+        command "setOscillation", [[name: "Oscillation*", type: "ENUM", description: "Oscillation to set; this fan's choices are in supportedOscillation", constraints: ["off", "on", "horizontal", "vertical", "both"]]]
+        command "setDisplay", [[name: "Display*", type: "ENUM", description: "Display on, off or automatic; this fan's choices are in supportedDisplay", constraints: ["on", "off", "auto"]]]
+        command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed (fans with a panelSound attribute)", constraints: ["on", "off"]]]
+        command "setChildLock", [[name: "Child lock*", type: "ENUM", description: "Lock the fan's buttons (fans with a childLock attribute)", constraints: ["on", "off"]]]
     }
     preferences {
         input "speedSteps", "number", title: "Number of speed steps (0 = from the model)", defaultValue: 0, range: "0..20"
@@ -124,7 +126,7 @@ private void emit(Map e) {
     // Most of each report is unchanged: skip those values rather than send them.
     boolean same = device.currentValue(e.name)?.toString() == e.value?.toString()
     if (same && !e.isStateChange) return
-    if (txtEnable && !same && !(e.name in ["supportedFanSpeeds", "supportedModes", "maxSpeedLevel"])) {
+    if (txtEnable && !same && !(e.name.startsWith("supported") || e.name == "maxSpeedLevel")) {
         e.descriptionText = "${device.displayName} ${e.name} is ${e.value}${e.unit ?: ''}"
         log.info e.descriptionText
     }

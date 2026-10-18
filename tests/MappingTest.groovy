@@ -123,6 +123,19 @@ check("setSpeed: named speeds") {
     assert cmd("DR-HCF001S", [poweron: true, fanon: true], "setSpeed", ["medium"]) == [windlevel: 7]
 }
 
+check("setSpeed: standard names a fan doesn't list go to the nearest step") {
+    // Hubitat's own setSpeed list (and dashboards) always offer all five names.
+    Map on4 = [poweron: true, mode: 1]
+    assert ["low", "medium-low", "medium", "medium-high", "high"].collect {
+        cmd("DR-HAF001S", on4, "setSpeed", [it]).windlevel
+    } == [1, 2, 2, 3, 4]
+    Map p3 = [kind: "tower", min: 1, max: 3, steps: 3, modes: null, powerKey: "poweron", modeKey: "mode"]
+    assert ["medium-low", "medium-high"].collect { app.buildCommand(p3, on4, "setSpeed", [it], [:]).windlevel } == [1, 2]
+    Map p1 = p3 + [max: 1, steps: 1]
+    assert ["low", "medium", "high"].collect { app.buildCommand(p1, on4, "setSpeed", [it], [:]).windlevel } == [1, 1, 1]
+    assert cmd("DR-HAF001S", [poweron: false, mode: 4], "setSpeed", ["medium"]) == [poweron: true, windlevel: 2, mode: 1]
+}
+
 check("setSpeed: on/off and waking a fan that is off") {
     assert cmd("DR-HTF011S", ON9, "setSpeed", ["off"]) == [poweron: false]
     assert cmd("DR-HTF011S", OFF9, "setSpeed", ["on"]) == [poweron: true]
@@ -146,7 +159,6 @@ check("setSpeed / setSpeedLevel leave auto mode") {
 }
 
 check("setSpeed: unsupported names") {
-    throwsIAE { cmd("DR-HAF001S", [poweron: true], "setSpeed", ["medium"]) }  // 4 steps: no plain medium
     throwsIAE { cmd("DR-HTF011S", ON9, "setSpeed", ["warp"]) }
     throwsIAE { cmd("DR-HTF011S", ON9, "setSpeed", [null]) }
 }
@@ -458,6 +470,8 @@ check("dreoEvents: DR-HAF001S (4 steps, single-axis oscillation)") {
     Map e = events("DR-HAF001S", s)
     assert e.remove("supportedFanSpeeds").with { json(it) } == ["low", "medium-low", "medium-high", "high", "auto", "on", "off"]
     assert e.remove("supportedModes").with { json(it) } == ["normal", "natural", "sleep", "auto"]
+    assert json(e.remove("supportedOscillation")) == ["off", "on"]
+    assert json(e.remove("supportedDisplay")) == ["off", "on"]
     assert e == [switch: "on", maxSpeedLevel: 4, speedLevel: 3, level: 75, speed: "medium-high", mode: "normal",
                  oscillation: "on", display: "off", panelSound: "off", childLock: "on", temperature: 72.0G]
 }
@@ -486,6 +500,8 @@ check("dreoEvents: DR-HPF008S with light ring (atm* keys)") {
     assert json(e.remove("supportedFanSpeeds")) == FIVE + ["auto", "on", "off"]
     assert json(e.remove("supportedModes")) == ["normal", "natural", "sleep", "auto", "turbo"]
     assert json(e.remove("ring.lightEffects")) == ["1": "constant", "2": "circle", "3": "breath"]
+    assert json(e.remove("supportedOscillation")) == ["off", "horizontal", "vertical", "both"]
+    assert json(e.remove("supportedDisplay")) == ["off", "on", "auto"]
     assert e == [switch: "on", maxSpeedLevel: 9, speedLevel: 9, level: 100, speed: "high", mode: "turbo",
                  oscillation: "both", display: "auto", panelSound: "off", childLock: "off", temperature: 71.6G,
                  "ring.switch": "on", "ring.level": 67, "ring.RGB": "#00FF00", "ring.color": "#00FF00",
@@ -506,6 +522,9 @@ check("dreoEvents: ring hue/saturation left alone when they already give the col
 check("dreoEvents: two-axis hoscon/voscon and windtype modes") {
     Map e = events("DR-HPF004S", [poweron: true, windlevel: 1, windtype: 6, hoscon: false, voscon: true])
     assert e.oscillation == "vertical" && e.mode == "custom" && e.speed == "low"
+    assert json(e.supportedOscillation) == ["off", "horizontal", "vertical", "both"]
+    // No display key reported: no display choices either.
+    assert !e.containsKey("supportedDisplay")
 }
 
 check("dreoEvents: DR-HCF ceiling fan, gate open") {

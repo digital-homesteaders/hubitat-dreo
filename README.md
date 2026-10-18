@@ -4,11 +4,13 @@ Control Dreo cloud fans and humidifiers from a Hubitat Elevation hub: tower
 fans, air circulators and ceiling fans, including ceiling lights and light
 rings, and DR-HHM humidifiers.
 
-> **Status: v0.1, not yet tested on a hub.** The Dreo protocol is the one
-> verified on real fans in the author's Homey Dreo app (itself a port of
-> [hass-dreo](https://github.com/JeffSteinbok/hass-dreo)), but this Hubitat
-> code has not run yet. See
-> [What needs testing](#what-needs-testing).
+> **Status: v0.1, early testing on a Hubitat C-8.** Installing, signing in,
+> discovery and device creation work, and on a DR-HPF008S live updates and
+> commands from Hubitat (power, speeds, modes, display, temperature) behave as
+> expected. The other features follow the protocol verified in the author's
+> Homey Dreo app and in
+> [hass-dreo](https://github.com/JeffSteinbok/hass-dreo), but haven't been
+> checked on a hub yet. See [What needs testing](#what-needs-testing).
 
 ## How it works
 
@@ -70,8 +72,8 @@ European accounts are both supported; the region is picked up at sign-in.
 | SwitchLevel `setLevel(%)`, `level` | `windlevel` as a percentage of the top step, like Homey's fan speed: step 5 of 9 is 56 %; a percentage picks the nearest step; 0 % turns the fan off |
 | `setSpeedLevel(n)`, `speedLevel`, `maxSpeedLevel` | the exact step, 1..N |
 | `setMode(mode)`, `mode`, `supportedModes` | `mode` / `windtype`: normal, natural, sleep, auto, turbo, custom (per model) |
-| `setOscillation(off/on/horizontal/vertical/both)`, `oscillation` | `shakehorizon` / `oscon` / `hoscon`, or `oscmode` / `hoscon`+`voscon` on two-axis fans |
-| `setDisplay(on/off/auto)`, `display` | `ledkepton` / `ledalwayson` / `lighton`, or `lightmode` |
+| `setOscillation(off/on/horizontal/vertical/both)`, `oscillation`, `supportedOscillation` | `shakehorizon` / `oscon` / `hoscon`, or `oscmode` / `hoscon`+`voscon` on two-axis fans |
+| `setDisplay(on/off/auto)`, `display`, `supportedDisplay` | `ledkepton` / `ledalwayson` / `lighton`, or `lightmode` |
 | `setPanelSound(on/off)`, `panelSound` | `voiceon` / `muteon` |
 | `setChildLock(on/off)`, `childLock` | `childlockon` |
 | TemperatureMeasurement | `temperature` + `tempoffset`, in the unit set by `tempunit` (1 = °F), shown in the hub's scale |
@@ -79,8 +81,18 @@ European accounts are both supported; the region is picked up at sign-in.
 
 Named speeds: fans with 5+ steps use low, medium-low, medium, medium-high and
 high (for 9 steps: 2, 4, 5, 7, 9). Fans with fewer steps use a subset (for 4
-steps: low, medium-low, medium-high, high = 1, 2, 3, 4). Setting a named speed
-or a step while in Auto mode switches the fan to Normal.
+steps: low, medium-low, medium-high, high = 1, 2, 3, 4); `supportedFanSpeeds`
+lists them. A standard name the fan doesn't list, such as `medium` from
+Hubitat's own speed list or a dashboard tile, picks the nearest step (on 4
+steps, `medium` is step 2). Setting a named speed or a step while in Auto mode
+switches the fan to Normal.
+
+Hubitat gives every fan the same choices in the device page's command lists
+(modes, oscillation, display), because a driver can't vary them per device.
+The `supportedModes`, `supportedOscillation` and `supportedDisplay`
+attributes show which ones this fan has; any other choice is ignored with a
+warning in **Logs**. Panel sound and child lock only work on fans that show a
+`panelSound` or `childLock` attribute.
 
 The level always shows the step the fan is really on, so a slider snaps to
 the nearest speed the fan has (50 % on a 9-step fan becomes step 5, shown as
@@ -193,28 +205,33 @@ tests/run.sh
 The stand-ins only model the hub as far as these files use it, so the hub
 itself still needs checking.
 
+### Confirmed on a hub (Hubitat C-8, October 2026)
+
+- The app and all drivers save in Apps Code / Drivers Code.
+- Sign-in (North America) with the hashed password, discovery, and device
+  creation for all the author's fans; the humidifier (DR-HHM001S) is
+  discovered and added.
+- DR-HPF008S: pushed updates for power, named speeds and steps, all five
+  modes (Auto shows as speed `auto`), display auto/on/off and temperature in
+  °F; commands sent from Hubitat take effect about as fast as the pushes.
+
 ### Still needs a hub
 
-1. App and drivers save in Apps Code / Drivers Code (the local compile uses
-   the same Groovy, but not Hubitat's sandbox or its class whitelist).
-2. Password hashing: the password field clears and sign-in works (MD5 via
-   `java.security.MessageDigest`).
-3. Async sign-in against Dreo, the EU region redirect, and the 30-minute
-   back-off after a wrong password.
-4. **Choose devices** page: the page auto-refresh during discovery, how it looks,
-   and whether it works before the app's first **Done**.
-5. Real WebSocket behaviour: `pingInterval`, the status strings Hubitat
-   actually sends, reconnect after a hub reboot (Initialize), and whether Dreo
-   acknowledges commands as expected.
-6. Per fan (DR-HAF001S, DR-HTF004S, DR-HPF008S, DR-HPF004S): that the real
-   state keys match the samples in the tests, and the fan does what the params
-   say. The DR-HTF004S is not in hass-dreo's table, so its speed range is a
-   guess (1–9).
-7. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
+1. The EU region redirect, and the 30-minute back-off after a wrong password.
+2. **Choose devices** page: whether it works before the app's first **Done**.
+3. WebSocket over time: reconnect after a hub reboot (Initialize) or a lost
+   network, and the no-acknowledgement reconnect.
+4. DR-HPF008S: oscillation, panel sound, child lock, and leaving Auto mode by
+   setting a speed.
+5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): that the real state
+   keys match the samples in the tests, and each fan does what the params say,
+   including `medium` on the 4-step DR-HAF001S. The DR-HTF004S is not in
+   hass-dreo's table, so its speed range is a guess (1–9).
+6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
    effects.
-8. Ceiling fan (when it arrives): the power gate and light child on the real
+7. Ceiling fan (when it arrives): the power gate and light child on the real
    fan.
-9. Humidifier (DR-HHM001S): the real state keys and `controlsConf` match the
+8. Humidifier (DR-HHM001S): the real state keys and `controlsConf` match the
    hass-dreo samples; target humidity in Auto and Sleep, mist levels 1–6,
    display, panel sound, ambient light; what `wrong` reports with the tank
    lifted off.

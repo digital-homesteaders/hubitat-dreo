@@ -698,11 +698,18 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
     }
 
     String osc = oscillationOf(s)
-    if (osc) ev << [name: "oscillation", value: osc]
+    if (osc) {
+        ev << [name: "oscillation", value: osc]
+        // setOscillation's list is fixed for every fan; this says which choices apply here.
+        ev << [name: "supportedOscillation", value: JsonOutput.toJson(twoAxis(s) ? OSC_MODES : ["off", "on"])]
+    }
 
     if (p.kind != "ceiling") {
         String display = displayOf(s)
-        if (display) ev << [name: "display", value: display]
+        if (display) {
+            ev << [name: "display", value: display]
+            ev << [name: "supportedDisplay", value: JsonOutput.toJson(s.lightmode instanceof Number ? DISPLAY_MODES : ["off", "on"])]
+        }
     }
     if (s.containsKey("voiceon")) ev << [name: "panelSound", value: s.voiceon ? "on" : "off"]
     else if (s.containsKey("muteon")) ev << [name: "panelSound", value: s.muteon ? "off" : "on"]
@@ -973,8 +980,13 @@ private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
                 return wake([(p.modeKey): autoMode[1]])
             }
             int named = speedNames(p.steps).indexOf(speed)
-            if (named < 0) throw new IllegalArgumentException("unsupported speed ${speed}")
-            return wake(speedParams(p, s, levelForSpeed(named, p.min, p.steps)))
+            if (named >= 0) return wake(speedParams(p, s, levelForSpeed(named, p.min, p.steps)))
+            // A standard name this fan doesn't list (e.g. "medium" on a 4-step fan,
+            // from Hubitat's fixed speed list or a dashboard): the nearest step to
+            // that name's share of the five standard speeds.
+            int std = SPEED_NAMES.indexOf(speed)
+            if (std < 0) throw new IllegalArgumentException("unsupported speed ${speed}")
+            return wake(speedParams(p, s, stepForPercent(p, (std + 1) * 20)))
         case "cycleSpeed":
             List names = speedNames(p.steps)
             int cur = s.windlevel instanceof Number ? names.indexOf(speedNameFor(p, s.windlevel as int)) : -1
@@ -1019,9 +1031,12 @@ private Map speedParams(Map p, Map s, int level) {
     return params
 }
 
+private boolean twoAxis(Map s) {
+    return s.containsKey("oscmode") || (s.containsKey("hoscon") && s.containsKey("voscon"))
+}
+
 private Map oscillationParams(Map s, String v) {
-    boolean twoAxis = s.containsKey("oscmode") || (s.containsKey("hoscon") && s.containsKey("voscon"))
-    if (twoAxis) {
+    if (twoAxis(s)) {
         int bits
         if (v == "on") bits = (s.containsKey("oscmode") ? (s.oscmode as int) & 2 : (s.voscon ? 2 : 0)) | 1
         else bits = OSC_MODES.indexOf(v)
