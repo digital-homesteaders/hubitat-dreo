@@ -97,7 +97,7 @@ itself still needs checking.
    that each fan does what the params say, including turbo and the `fanon`
    power key on the DR-HPF008S, `medium` on the 4-step DR-HAF001S, and the
    DR-HTF004S's other commands (its speeds 11–12 are confirmed above).
-6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
+6. Light ring on a DR-HPF008S on real hardware: brightness steps, colours,
    effects.
 7. Ceiling fan (when it arrives): the power gate and light child on the real
    fan.
