@@ -94,9 +94,8 @@ itself still needs checking.
 7. Ceiling fan (when it arrives): the power gate and light child on the real
    fan.
 8. Humidifier (DR-HHM001S): its real state and device list are in the tests
-   (target range 30–90 %). Still to check: why Dreo's REST state said
-   `connected: false` on 2026-10-18 (the app then shows it offline and holds
-   commands) and whether it was really offline; target humidity in Auto and Sleep, mist levels 1–6,
+   (target range 30–90 %; its `connected: false` that day was right: it was
+   unplugged, and the app showed it offline). Still to check: target humidity in Auto and Sleep, mist levels 1–6,
    display, panel sound, ambient light; what `wrong` reports with the tank
    lifted off.
 9. Offline handling: unplug a fan and plug it back in, then send a command
