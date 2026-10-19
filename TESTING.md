@@ -70,6 +70,8 @@ itself still needs checking.
 - Sign-in (North America) with the hashed password, discovery, and device
   creation for all the author's fans; the humidifier (DR-HHM001S) is
   discovered and added.
+- DR-HHM001S humidifier: every command from Hubitat appeared to work (power,
+  mode, target humidity, mist level, display, panel sound, ambient light).
 - DR-HPF004S ("the DR-HPF004S"; first written up here as the DR-HPF008S, a guess
   that turned out wrong): pushed updates for power, named speeds and steps,
   modes (Auto shows as speed `auto`), display auto/on/off and temperature in
@@ -101,11 +103,11 @@ itself still needs checking.
    effects.
 7. Ceiling fan (when it arrives): the power gate and light child on the real
    fan.
-8. Humidifier (DR-HHM001S): its real state and device list are in the tests
-   (target range 30–90 %; its `connected: false` that day was right: it was
-   unplugged, and the app showed it offline). Still to check: target humidity in Auto and Sleep, mist levels 1–6,
-   display, panel sound, ambient light; what `wrong` reports with the tank
-   lifted off.
+8. Humidifier (DR-HHM001S): its commands work (see above), and its real state
+   and device list are in the tests (target range 30–90 %; its
+   `connected: false` that day was right: it was unplugged, and the app showed
+   it offline). Still to check: what `wrong` reports with the tank lifted off,
+   and targets above 80 % (the range the device list gives newer firmware).
 9. Offline handling: unplug a fan and plug it back in, then send a command
    straight away (it should go out once the app has re-read the fan); with
    the hub's internet cut for over 2 minutes, every Dreo device's
