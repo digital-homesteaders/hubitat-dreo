@@ -386,15 +386,129 @@ check("offline and online messages set healthStatus") {
     ws([devicesn: "SN9", method: "report", reported: [poweron: true]])
 }
 
-check("an offline device gets no commands, and is re-read instead") {
+/** A REST state answer for a fan, as fanStateDone gets it. */
+Map restState(Map s) { [mixed: s.collectEntries { k, v -> [(k): [state: v]] }] }
+
+check("an offline device: the command waits for a refresh, and goes out if the device is online after all") {
     ws([devicesn: "SN2", method: "device-offline"])
     int from = conn().driver.callsNamed("ws.send").size()
     int gets = app.callsNamed("asynchttpGet").size()
-    child("dreo-SN2").setSpeedLevel("3")
+    FakeDevice f = child("dreo-SN2")
+    f.setSpeedLevel("3")
+    f.setSpeedLevel("4")                   // a second command doesn't re-read again
+    hub.settle()
+    assert sent(from).isEmpty()
+    assert app.callsNamed("asynchttpGet").drop(gets)*.get(3)*.data*.sn == ["SN2"]
+    assert app.callsNamed("runIn").last()[2] == "expireHeld"
+    // The device-online push was missed: the refresh shows it online.
+    app.fanStateDone(restState([poweron: true, fanon: true, windlevel: 1, connected: true]), [sn: "SN2"])
+    hub.settle()
+    assert f.currentValue("healthStatus") == "online"
+    assert f.currentValue("speedLevel") == 4
+    // Both go out, in order, the second after the first's ack.
+    assert sent(from).size() == 1 && sent(from)[0].devicesn == "SN2" && sent(from)[0].params.windlevel == 3
+    ack("SN2")
+    assert sent(from).size() == 2 && sent(from)[1].params.windlevel == 4
+    ack("SN2")
+    // Nothing is left to send by a later refresh.
+    app.fanStateDone(restState([windlevel: 4, connected: true]), [sn: "SN2"])
+    hub.settle()
+    assert sent(from).size() == 2
+}
+
+check("an offline device: the command is dropped with a warning if it is still offline") {
+    ws([devicesn: "SN2", method: "device-offline"])
+    int from = conn().driver.callsNamed("ws.send").size()
+    child("dreo-SN2").setSpeedLevel("2")
+    hub.settle()
+    app.fanStateDone(restState([windlevel: 4, connected: false]), [sn: "SN2"])
     hub.settle()
     assert sent(from).isEmpty()
     assert app.log.at("warn").last() == "Dreo: Bedroom Fan is offline in Dreo's cloud; setSpeedLevel not sent"
-    assert app.callsNamed("asynchttpGet").drop(gets)*.get(3)*.data*.sn == ["SN2"]
+    assert child("dreo-SN2").currentValue("healthStatus") == "offline"
+    // A failed refresh drops it too.
+    child("dreo-SN2").setSpeedLevel("2")
+    hub.settle()
+    app.fanStateDone(null, [sn: "SN2"])
+    assert app.log.at("warn").last() == "Dreo: could not check whether Bedroom Fan is online; setSpeedLevel not sent"
+    assert sent(from).isEmpty()
+}
+
+check("an offline device: a held command whose refresh never answers expires") {
+    int from = conn().driver.callsNamed("ws.send").size()
+    int gets = app.callsNamed("asynchttpGet").size()
+    child("dreo-SN2").setSpeedLevel("5")
+    hub.settle()
+    assert app.callsNamed("asynchttpGet").size() == gets + 1
+    app.expireHeld([sn: "SN2"])            // too early: kept
+    assert !app.log.at("warn").last().contains("no answer")
+    hub.advance(31000)
+    app.expireHeld([sn: "SN2"])
+    assert app.log.at("warn").last() == "Dreo: no answer from Dreo for Bedroom Fan; setSpeedLevel not sent"
+    // A late answer sends nothing, and the next command re-reads again.
+    app.fanStateDone(restState([connected: true]), [sn: "SN2"])
+    hub.settle()
+    assert sent(from).isEmpty()
+    assert child("dreo-SN2").currentValue("healthStatus") == "online"
+}
+
+check("cloud connection down for 2 minutes: every device offline until it reconnects") {
+    FakeDevice f1 = child("dreo-SN1"), f2 = child("dreo-SN2")
+    ws([devicesn: "SN1", method: "device-online", reported: [:]])
+    assert f1.currentValue("healthStatus") == "online" && f2.currentValue("healthStatus") == "online"
+    conn().webSocketStatus("failure: connection reset")
+    hub.settle()
+    assert app.callsNamed("runIn").find { it[2] == "cloudCheck" }?.get(1) == 120
+    // A short drop changes nothing.
+    hub.advance(60000)
+    conn().webSocketStatus("status: open")  // (pretend the reconnect worked)
+    hub.settle()
+    hub.advance(61000)
+    app.cloudCheck()
+    hub.settle()
+    assert f1.currentValue("healthStatus") == "online"
+    // A long one does, also when the reconnects keep failing.
+    conn().webSocketStatus("failure: connection reset")
+    hub.settle()
+    hub.advance(90000)
+    conn().connect("wss://x")
+    conn().webSocketStatus("failure: still down")
+    hub.settle()
+    assert f1.currentValue("healthStatus") == "online"
+    hub.advance(31000)
+    app.cloudCheck()
+    hub.settle()
+    assert f1.currentValue("healthStatus") == "offline" && f2.currentValue("healthStatus") == "offline"
+    assert app.log.at("warn").last().startsWith("Dreo: cloud connection down (not connected for 2 minutes)")
+    // A refresh while it is down keeps the device offline.
+    app.fanStateDone(restState([connected: true]), [sn: "SN1"])
+    hub.settle()
+    assert f1.currentValue("healthStatus") == "offline"
+    // Back: the catch-up poll restores each device's real status.
+    conn().connect("wss://x")
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    assert !app.state.cloudDown && app.callsNamed("runIn").last()[2] == "pollAll"
+    app.fanStateDone(restState([connected: true]), [sn: "SN1"])
+    app.fanStateDone(restState([connected: false]), [sn: "SN2"])
+    hub.settle()
+    assert f1.currentValue("healthStatus") == "online" && f2.currentValue("healthStatus") == "offline"
+    ws([devicesn: "SN2", method: "device-online", reported: [:]])
+}
+
+check("Dreo rejecting the sign-in while disconnected marks every device offline") {
+    conn().webSocketStatus("failure: unauthorized")
+    hub.settle()
+    app.loginDone(new FakeResp(json: [code: 10002, msg: "wrong password"]), [region: "NA", depth: 0])
+    hub.settle()
+    assert child("dreo-SN1").currentValue("healthStatus") == "offline"
+    assert child("dreo-SN2").currentValue("healthStatus") == "offline"
+    app.state.remove("authFailedAt")
+    conn().connect("wss://x")
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    assert !app.state.cloudDown
+    ws([devicesn: "SN1", method: "device-online", reported: [:]])
     ws([devicesn: "SN2", method: "device-online", reported: [:]])
 }
 

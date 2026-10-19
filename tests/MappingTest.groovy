@@ -552,11 +552,11 @@ check("dreoState drops private, hardware and noisy network keys") {
     assert app.dreoState(null) == [:]
 }
 
-check("dreoCommand: an offline device gets nothing") {
+check("dreoCommand: an offline device gets nothing yet; it is re-read first") {
     FakeDevice cd = fan("DR-HTF011S")
     cd.current.healthStatus = "offline"
     assert app.dreoCommand(cd, ON9, "on", []) == null
-    assert app.log.at("warn").last().contains("offline in Dreo's cloud; on not sent")
+    assert app.log.at("info").last().contains("shows offline; checking with Dreo before sending on")
 }
 
 // ---------------------------------------------------------------- head position and oscillation range

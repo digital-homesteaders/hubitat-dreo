@@ -35,10 +35,20 @@ downloading Dreo's 700 KB app configuration on the hub.
 
 Commands go out one at a time. Commands for the same device that are still
 waiting merge into one (the newest value of each setting), so a rule or a
-burst of taps sends fewer messages. A device that Dreo reports offline gets no
-commands: the app logs a warning and re-reads it instead. If a command gets no
-answer while Dreo keeps sending other messages, only that device is re-read;
-the connection reconnects only when Dreo has gone quiet altogether.
+burst of taps sends fewer messages. A command for a device that shows offline
+is held while the app re-reads the device from Dreo: if the device is online
+after all (Dreo's "back online" message was missed), the command goes out;
+if it is still offline, or Dreo doesn't answer within 30 seconds, the command
+is dropped with a warning in the log. Offline devices are never sent commands
+directly, since Dreo doesn't answer for them. If a command gets no answer
+while Dreo keeps sending other messages, only that device is re-read; the
+connection reconnects only when Dreo has gone quiet altogether.
+
+`healthStatus` also covers the cloud connection: when the Dreo Cloud
+Connection has been disconnected for 2 minutes, or Dreo rejects the sign-in
+while it is disconnected, every Dreo device shows `offline` (the app logs
+"cloud connection down"), so a "device offline" alert fires. When the
+connection is back, each device is re-read and shows its real status.
 
 Devices keep Dreo's state for their own settings only: network details (Wi-Fi
 name, MAC and IP addresses, signal strength) are not stored, and the firmware
@@ -107,7 +117,7 @@ European accounts are both supported; the region is picked up at sign-in.
 | `setHeadPosition(vertical, horizontal)`, `headVertical`, `headHorizontal` | `fixedconf` ("vertical,horizontal"): where the head points when not oscillating, in degrees. Leave one empty to keep it; an oscillating fan stops oscillating. Fans that report it (e.g. DR-HPF004S, DR-HPF008S). |
 | `setOscillationRange(left, right, bottom, top)`, `oscillationLeft` … `oscillationTop` | `cruiseconf` ("top,right,bottom,left"): the oscillation limits, at least 30° apart on each axis; empty keeps a limit |
 | `savePosition(slot, name)`, `goToPosition(slot)`, `deletePosition(slot)`, `savedPositions` | Up to five head positions kept on the Hubitat device (Dreo's cloud has no saved positions). `goToPosition` also takes a saved name, for rules. |
-| `healthStatus` | fan online/offline |
+| `healthStatus` | fan online/offline; also offline while the cloud connection is down (see [How it works](#how-it-works)) |
 
 Angles are clamped to the head's range: hass-dreo's per-model ranges (for
 example DR-HPF004S ±75° across, −30° to 90° up), widened to any angle the fan
@@ -172,7 +182,7 @@ samples.
 | `setDisplay(on/off)`, `display` | `ledlevel` (0 off, 2 on) |
 | `setPanelSound(on/off)`, `panelSound` | `muteon` |
 | `setAmbientLight(on/off)`, `ambientLight` | `ambient_switch`, or `rgblevel` (0 off, 2 on) |
-| `healthStatus` | online/offline |
+| `healthStatus` | online/offline; also offline while the cloud connection is down |
 
 The target-humidity and mist ranges come from the device list Dreo sends at
 discovery (30–80 % and mist 1–6 on the HM311S), falling back to 30–90 % and
@@ -222,7 +232,11 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   creation and removal, saved head positions,
   WebSocket open/reports/acks, the one-at-a-time command queue, retries and
   reconnect after a missing ack, light ring and ceiling light children, the
-  gate on a real command, online/offline, REST refresh, the speed-step
+  gate on a real command, online/offline, commands held for a device shown
+  offline (sent if a refresh finds it online, dropped if it is still offline,
+  the refresh fails or never answers), every device offline after 2 minutes
+  without the cloud connection or on a rejected sign-in and back on
+  reconnect, REST refresh, the speed-step
   preference, and a humidifier from discovery through reports and commands.
 
 To run them, get a JDK and Groovy 2.4 once (downloaded into the git-ignored
@@ -272,6 +286,11 @@ itself still needs checking.
    hass-dreo samples; target humidity in Auto and Sleep, mist levels 1–6,
    display, panel sound, ambient light; what `wrong` reports with the tank
    lifted off.
+9. Offline handling: unplug a fan and plug it back in, then send a command
+   straight away (it should go out once the app has re-read the fan); with
+   the hub's internet cut for over 2 minutes, every Dreo device's
+   `healthStatus` turns `offline`, and back to its real status a few seconds
+   after the connection returns.
 
 ## Credits and licence
 

@@ -63,6 +63,17 @@ preferences {
 // A sign-in older than this is assumed lost and may be started again.
 @Field static final long LOGIN_STALE_MS = 60 * 1000L
 
+// Commands for a device showing offline, held while a refresh checks whether
+// it really is (see dreoCommand), keyed by serial number. In memory only: they
+// are seconds old at most.
+@Field static final ConcurrentHashMap<String, Map> HELD = new ConcurrentHashMap<>()
+// Held commands still waiting after this long are dropped (the refresh got lost).
+@Field static final long HELD_MAX_AGE_MS = 30 * 1000L
+@Field static final int HELD_MAX = 10
+// The cloud connection counts as down (every device offline) after this long
+// without reconnecting.
+@Field static final long CLOUD_DOWN_MS = 2 * 60 * 1000L
+
 // Device-list fields the raw dump keeps (model data, nothing personal).
 @Field static final List RAW_DEVICE_KEYS = ["model", "series", "seriesName", "productId", "productName", "type", "brand", "color", "controlsConf", "mainConf"]
 
@@ -552,6 +563,8 @@ def loginDone(resp, Map ctx) {
         state.status = "Dreo rejected the email or password (${json.msg ?: json.code}). Will retry in 30 minutes, or enter the password again."
         log.warn "Dreo: ${state.status}"
         finishLogin()
+        // Without a sign-in the cloud connection can't come back.
+        if (getConnection()?.currentValue("connection") != "connected") cloudDown("Dreo rejected the sign-in")
         return
     }
     if (resp.status != 200 || !json?.data?.access_token) {
@@ -685,14 +698,97 @@ void refreshFan(String sn) {
 
 def fanStateDone(data, Map ctx) {
     def cd = fanBySn(ctx.sn)
-    if (!cd || data == null) return
+    List held = takeHeld(ctx.sn as String)
+    if (!cd) return
+    if (data == null) {
+        if (held) log.warn "Dreo: could not check whether ${cd.displayName} is online; ${held*.cmd.join(', ')} not sent"
+        return
+    }
     Map flat = [:]
     (data.mixed ?: [:]).each { k, v ->
         flat[k] = (v instanceof Map && v.containsKey("state")) ? v.state : v
     }
     String fw = ["module_firmware_version", "mcu_firmware_version"].findAll { flat[it] }.collect { flat[it] }.join(" / ")
     if (fw && cd.getDataValue("firmware") != fw) cd.updateDataValue("firmware", fw)
-    cd.dreoUpdate(flat, flat.connected == false ? false : true)
+    boolean connected = flat.connected != false
+    // While the cloud connection is down every device stays offline (see cloudDown).
+    cd.dreoUpdate(flat, connected && !state.cloudDown)
+    if (!held) return
+    if (!connected) {
+        log.warn "Dreo: ${cd.displayName} is offline in Dreo's cloud; ${held*.cmd.join(', ')} not sent"
+        return
+    }
+    // The device is online after all: send what was held, each on top of the last.
+    Map s = dreoState(flat)
+    held.each { Map h ->
+        Map params = sendNow(cd, s, h.cmd as String, h.args as List, h.opts as Map)
+        if (params) {
+            cd.dreoUpdate(params, null)
+            s = s + params
+        }
+    }
+}
+
+// ---------------------------------------------------------------- commands held for offline devices
+
+private Map heldFor(String sn) {
+    HELD.putIfAbsent(sn, [cmds: []])
+    return HELD.get(sn)
+}
+
+/** Hold a command; returns true if it's the first, so the device needs a refresh. */
+private boolean hold(String sn, String cmd, List args, Map opts) {
+    Map h = heldFor(sn)
+    synchronized (h) {
+        boolean first = !h.cmds
+        if (first) h.at = now()
+        if (h.cmds.size() < HELD_MAX) h.cmds << [cmd: cmd, args: args ?: [], opts: opts ?: [:]]
+        return first
+    }
+}
+
+private List takeHeld(String sn) {
+    Map h = sn ? HELD.get(sn) : null
+    if (h == null) return []
+    synchronized (h) {
+        List cmds = h.cmds
+        h.cmds = []
+        return cmds ?: []
+    }
+}
+
+/** Drop held commands whose refresh never came back. */
+def expireHeld(Map data) {
+    Map h = HELD.get(data.sn as String)
+    if (h == null) return
+    List stale = []
+    synchronized (h) {
+        if (h.cmds && now() - ((h.at ?: 0L) as long) >= HELD_MAX_AGE_MS) {
+            stale = h.cmds
+            h.cmds = []
+        }
+    }
+    if (stale) log.warn "Dreo: no answer from Dreo for ${fanBySn(data.sn as String)?.displayName ?: data.sn}; ${stale*.cmd.join(', ')} not sent"
+}
+
+// ---------------------------------------------------------------- cloud connection health
+
+/**
+ * The cloud connection has been down too long (or Dreo rejected the sign-in):
+ * show every device offline, so "device offline" alerts fire. wsOpened
+ * clears this and the catch-up poll restores each device's real status.
+ */
+private void cloudDown(String reason) {
+    if (state.cloudDown) return
+    state.cloudDown = reason
+    log.warn "Dreo: cloud connection down (${reason}); showing every device offline until it is back"
+    getFanDevices().each { it.dreoOnline(false) }
+}
+
+/** Scheduled CLOUD_DOWN_MS after the connection dropped. */
+def cloudCheck() {
+    if (!state.linkDownAt || getConnection()?.currentValue("connection") == "connected") return
+    if (now() - (state.linkDownAt as long) >= CLOUD_DOWN_MS - 1000) cloudDown("not connected for ${(int) (CLOUD_DOWN_MS / 60000)} minutes")
 }
 
 // ---------------------------------------------------------------- WebSocket (via the connection device)
@@ -711,7 +807,12 @@ void connectSocket(Map data = [:]) {
 
 /** The connection device opened the socket. */
 void wsOpened() {
-    // Catch up on anything missed while disconnected.
+    state.remove("linkDownAt")
+    if (state.cloudDown) {
+        state.remove("cloudDown")
+        log.info "Dreo: cloud connection back; re-reading every device"
+    }
+    // Catch up on anything missed while disconnected (and set healthStatus from it).
     runIn(5, "pollAll")
 }
 
@@ -721,6 +822,15 @@ void wsClosed(String reason, int failures) {
     if (failures >= 3) dropToken()
     int delay = Math.min(60, 5 * (1 << Math.max(0, Math.min(failures - 1, 4))))
     if (state.authFailedAt) delay = (int) (AUTH_RETRY_MS / 1000)
+    if (state.authFailedAt) {
+        cloudDown("Dreo rejected the sign-in")
+    } else if (!state.linkDownAt) {
+        state.linkDownAt = now()
+        runIn((int) (CLOUD_DOWN_MS / 1000), "cloudCheck")
+    } else {
+        // Still failing: the scheduled check may have been replaced (e.g. by Done).
+        cloudCheck()
+    }
     log.info "Dreo: cloud connection closed (${reason}); reconnecting in ${delay}s"
     runIn(delay, "connectSocket")
 }
@@ -826,11 +936,21 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
 Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
     if (cd.currentValue("healthStatus") == "offline") {
         // Dreo doesn't answer for an offline device, and a missing answer would
-        // make the connection reconnect. Re-read it in case "offline" is stale.
-        log.warn "Dreo: ${cd.displayName} is offline in Dreo's cloud; ${cmd} not sent"
-        refreshFan(cd.getDataValue("sn"))
+        // make the connection reconnect. But "offline" may be stale (a missed
+        // device-online push): hold the command, re-read the device, and send
+        // it from fanStateDone if Dreo says it is online.
+        String sn = cd.getDataValue("sn")
+        log.info "Dreo: ${cd.displayName} shows offline; checking with Dreo before sending ${cmd}"
+        if (hold(sn, cmd, args, opts)) {
+            refreshFan(sn)
+            runIn((int) (HELD_MAX_AGE_MS / 1000) + 1, "expireHeld", [data: [sn: sn], overwrite: false])
+        }
         return null
     }
+    return sendNow(cd, s, cmd, args, opts)
+}
+
+private Map sendNow(cd, Map s, String cmd, List args, Map opts) {
     boolean humidifier = kindOf(cd.getDataValue("model")) == "humidifier"
     Map p = humidifier ? humidifierProfile(cd) : profile(cd.getDataValue("model"), s, opts)
     Map params
