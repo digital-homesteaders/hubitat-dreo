@@ -1,0 +1,54 @@
+{
+ "source": "hass-dreo tests/pydreo/api_responses: get_devices_HPF004S.json, get_device_state_HPF004S_1.json",
+ "device": {
+  "model": "DR-HPF004S",
+  "series": null,
+  "seriesName": "704S",
+  "productId": "1706129276403773442",
+  "productName": "Air Circulator",
+  "type": 0,
+  "brand": "Dreo",
+  "color": "s",
+  "controlsConf": {},
+  "mainConf": {
+   "isSmart": true,
+   "isWifi": true,
+   "isBluetooth": null,
+   "isVoiceControl": true
+  }
+ },
+ "state": {
+  "_ota": 0,
+  "alignon": true,
+  "childlockon": false,
+  "connected": true,
+  "cruiseconf": "90,75,-30,-75",
+  "customconf": "temp:23333334444446666668888889",
+  "fixedconf": "0,-5",
+  "lighton": false,
+  "lightsensoron": false,
+  "mcu_firmware_version": "0.5.0",
+  "mcuon": true,
+  "mode": 1,
+  "module_firmware_version": "3.4.7",
+  "module_hardware_model": "HeFi",
+  "muteon": true,
+  "network_latency": 19,
+  "oscmode": 0,
+  "poweron": false,
+  "scheid": 0,
+  "scheon": false,
+  "temperature": 75,
+  "timeroff": {
+   "du": 0,
+   "ts": 1781900151
+  },
+  "timeron": {
+   "du": 0,
+   "ts": 1781900151
+  },
+  "wifi_rssi": -60,
+  "windlevel": 5,
+  "wrong": 0
+ }
+}

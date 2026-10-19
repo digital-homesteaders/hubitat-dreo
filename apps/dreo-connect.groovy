@@ -107,6 +107,17 @@ preferences {
     humidifier: [["manual", 0], ["auto", 1], ["sleep", 2]],
 ]
 
+// Mode names for the text keys in a device list's controlsConf (hass-dreo's
+// PRESET_MODE_STRINGS). Keys not listed here keep Dreo's own text.
+@Field static final Map MODE_TEXT = [
+    device_fans_mode_straight: "normal", device_control_mode_manual: "normal",
+    device_fans_mode_natural: "natural",
+    device_fans_mode_sleep: "sleep", device_control_mode_sleep: "sleep",
+    device_fans_mode_auto: "auto", device_control_mode_auto: "auto", base_auto: "auto",
+    device_fans_mode_turbo: "turbo", device_control_mode_turbo: "turbo",
+    device_control_custom: "custom", base_reverse: "reverse",
+]
+
 // Family defaults by model prefix. Unknown fans in a family use these.
 @Field static final Map FAMILIES = [
     "DR-HTF": [kind: "tower", speed: [1, 9], modes: "basic"],
@@ -116,12 +127,15 @@ preferences {
     "DR-HHM": [kind: "humidifier", modes: "humidifier"],
 ]
 
-// Per-model details, from hass-dreo's pydreo/models.py. `ring` is the light
+// Per-model details, from hass-dreo's pydreo/models.py. A fan's own
+// controlsConf in the device list (fanLimits) overrides `speed` and `modes`
+// unless the entry says `speedFixed`. `ring` is the light
 // ring's brightness range (atmbri) where it differs from 1-5. `h`/`v` are the
 // head's horizontal and vertical angle ranges (degrees) where hass-dreo gives
 // them; `settle` is the seconds a head needs between position commands.
 @Field static final Map MODELS = [
-    "DR-HTF007S": [speed: [1, 8]],
+    // controlsConf says 1-4 on every revision; newer ones have 8 steps (hass-dreo).
+    "DR-HTF007S": [speed: [1, 8], speedFixed: true],
     "DR-HTF011S": [speed: [1, 9]],
     "DR-HTF017S": [speed: [1, 4]],
     "DR-HTF018S": [speed: [1, 9]],
@@ -365,7 +379,7 @@ private void syncChildren() {
         }
     }
     getFanDevices().each { cd ->
-        // Limits read at discovery (humidifier ranges) also reach devices added earlier.
+        // Limits read at discovery (speed range, modes, humidifier ranges) also reach devices added earlier.
         (found[cd.getDataValue("sn")]?.limits ?: [:]).each { k, v ->
             if (cd.getDataValue(k) != v) cd.updateDataValue(k, v)
         }
@@ -633,12 +647,10 @@ def discoverDevices(data, Map ctx) {
         String kind = kindOf(d.model)
         if (kind) {
             found[d.sn] = [name: d.deviceName ?: d.model, model: d.model, series: d.seriesName]
-            if (kind == "humidifier") {
-                try {
-                    found[d.sn].limits = humidifierLimits(d.controlsConf)
-                } catch (e) {
-                    log.warn "Dreo: could not read ${d.model} limits (${e}); using defaults"
-                }
+            try {
+                found[d.sn].limits = kind == "humidifier" ? humidifierLimits(d.controlsConf) : fanLimits(d.controlsConf)
+            } catch (e) {
+                log.warn "Dreo: could not read ${d.model} limits (${e}); using defaults"
             }
         } else {
             unsupported << "${d.deviceName ?: d.model} (${d.model})"
@@ -883,7 +895,7 @@ void commandFailed(String sn) {
  */
 List dreoEvents(cd, Map s, Map opts = [:]) {
     if (kindOf(cd.getDataValue("model")) == "humidifier") return humidifierEvents(humidifierProfile(cd), s)
-    Map p = profile(cd.getDataValue("model"), s, opts)
+    Map p = fanProfile(cd, s, opts)
     List ev = []
     Boolean on = isOn(p, s)
     String modeId = modeOf(p, s)
@@ -972,7 +984,7 @@ Map dreoCommand(cd, Map s, String cmd, List args, Map opts = [:]) {
 
 private Map sendNow(cd, Map s, String cmd, List args, Map opts) {
     boolean humidifier = kindOf(cd.getDataValue("model")) == "humidifier"
-    Map p = humidifier ? humidifierProfile(cd) : profile(cd.getDataValue("model"), s, opts)
+    Map p = humidifier ? humidifierProfile(cd) : fanProfile(cd, s, opts)
     Map params
     try {
         params = humidifier ? humidifierCommand(p, s, cmd, args ?: []) : buildCommand(p, s, cmd, args ?: [], opts)
@@ -1050,14 +1062,25 @@ private String kindOf(String model) {
     return prefix ? FAMILIES[prefix].kind : null
 }
 
-/** What we know about this fan: model data, adjusted by the state keys it reports. */
-private Map profile(String model, Map s, Map opts) {
+/** A fan device's profile, with the speed range and modes read from its controlsConf at discovery. */
+private Map fanProfile(cd, Map s, Map opts) {
+    return profile(cd.getDataValue("model"), s, opts,
+        [speedRange: cd.getDataValue("speedRange"), modes: cd.getDataValue("modes")])
+}
+
+/**
+ * What we know about this fan: its controlsConf data (`conf`, as fanLimits
+ * stores it), else model and family data, adjusted by the state keys it reports.
+ */
+private Map profile(String model, Map s, Map opts, Map conf = [:]) {
     String prefix = FAMILIES.keySet().find { model?.startsWith(it) }
     Map fam = prefix ? FAMILIES[prefix] : FAMILIES["DR-HTF"]
     Map m = MODELS[model] ?: [:]
     String kind = fam.kind
-    int min = (m.speed ?: fam.speed)[0]
-    int max = (m.speed ?: fam.speed)[1]
+    List speed = (m.speedFixed ? null : rangeOf(conf?.speedRange as String, null)) ?: m.speed ?: fam.speed
+    List modes = modesOf(conf?.modes as String) ?: MODE_LISTS[m.modes ?: fam.modes]
+    int min = speed[0]
+    int max = speed[1]
     int override = (opts?.speedSteps ?: 0) as int
     if (override > 0) max = min + override - 1
     // A fan reporting a higher step than we expected knows better.
@@ -1079,9 +1102,61 @@ private Map profile(String model, Map s, Map opts) {
     }
     return [
         kind: kind, min: min, max: max, steps: max - min + 1,
-        modes: MODE_LISTS[m.modes ?: fam.modes], powerKey: powerKey, modeKey: modeKey,
+        modes: modes, powerKey: powerKey, modeKey: modeKey,
         ring: m.ring ?: [1, 5], h: h, v: v, settle: m.settle ?: 0,
     ]
+}
+
+/**
+ * Speed range and modes from a fan's controlsConf in the device list, as
+ * device data values: speedRange "1-9", modes "normal=1,natural=2,...". Many
+ * models get only a template reference ({template: ...}); then nothing is
+ * returned and the model table applies. Per hass-dreo's parse_speed_range and
+ * parse_preset_modes, except that the main control comes before extraConfigs,
+ * and the schedule's modes count only when there is no mode control
+ * (schedules list modes, e.g. custom, that the mode buttons don't).
+ */
+Map fanLimits(def conf) {
+    Map out = [:]
+    if (!(conf instanceof Map)) return out
+    List controls = (conf.control instanceof List ? conf.control : []).findAll { it instanceof Map && it.items instanceof List }
+    // extraConfigs controls can hold per-firmware variants (e.g. a DR-HTF005S
+    // MCU with 12 steps where the control says 9), so they count only when the
+    // main control has no Speed. A fan reporting a higher step widens the range anyway.
+    List extra = []
+    (conf.extraConfigs instanceof List ? conf.extraConfigs : []).each { x ->
+        if (x instanceof Map && x.key == "control" && x.value instanceof List) extra.addAll(x.value)
+    }
+    def speedControl = controls.find { it.type == "Speed" } ?:
+        extra.find { it instanceof Map && it.items instanceof List && it.type == "Speed" }
+    if (speedControl) {
+        List steps = speedControl.items.findAll { it instanceof Map && "${it.value}" ==~ /\d+/ }.collect { "${it.value}" as int }
+        if (steps.size() >= 2 && steps.min() < steps.max()) out.speedRange = "${steps.min()}-${steps.max()}".toString()
+    }
+    List modes = []
+    Closure add = { def text, def value ->
+        String name = MODE_TEXT[text] ?: text?.toString()
+        if (name && "${value}" ==~ /\d+/ && !modes.any { it[0] == name || it[1] == ("${value}" as int) }) {
+            modes << [name, "${value}" as int]
+        }
+    }
+    // Ceiling fans list their modes under CFFan.
+    controls.findAll { it.type in ["Mode", "CFFan"] }.each { c -> c.items.each { if (it instanceof Map) add(it.text, it.value) } }
+    if (!modes && conf.schedule instanceof Map && conf.schedule.modes instanceof List) {
+        conf.schedule.modes.each { if (it instanceof Map) add(it.title, it.value) }
+    }
+    if (modes) out.modes = modes.sort { it[1] }.collect { "${it[0]}=${it[1]}" }.join(",")
+    return out
+}
+
+/** Modes as fanLimits stores them, as [id, value] pairs; null if absent or garbled. */
+List modesOf(String v) {
+    if (!v) return null
+    List out = v.split(",").collect { String pair ->
+        def m = pair =~ /^([^=]+)=(\d+)$/
+        m.matches() ? [m.group(1), m.group(2) as int] : null
+    }
+    return out.every { it != null } ? out : null
 }
 
 /** The first `n` numbers of a "a,b,..." Dreo value, or null if it has fewer. */

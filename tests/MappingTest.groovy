@@ -773,4 +773,66 @@ check("humidifierCommand: display, panel sound, ambient light") {
     throwsIAE { hCmd(HHM001S, "setDisplay", ["auto"]) }
 }
 
+// ---------------------------------------------------------------- controlsConf (fanLimits)
+
+/** A fixture's device-list entry (tests/fixtures/<dir>/<model>.json). */
+Map fixtureDevice(String dir, String model) {
+    json(new File(root, "tests/fixtures/${dir}/${model}.json").text).device
+}
+
+check("fanLimits: speed range and Mode control from real device lists") {
+    assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HAF001S").controlsConf) ==
+        [speedRange: "1-4", modes: "normal=1,natural=2,sleep=3,auto=4"]
+    // The schedule's extra modes (custom 6) don't count when there is a mode control.
+    // DR-HTF005S also has a 1-12 Speed under extraConfigs, for one MCU only: the main control wins.
+    assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HTF005S").controlsConf) ==
+        [speedRange: "1-9", modes: "normal=1,natural=2,sleep=3,auto=4"]
+    // Swapped auto/natural, as the model table says.
+    assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HPF025S").controlsConf) ==
+        [speedRange: "1-9", modes: "normal=1,auto=2,sleep=3,natural=4,turbo=5"]
+    // Ceiling fans list modes under CFFan: this one has auto 5, not reverse 4.
+    assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HCF002S").controlsConf) ==
+        [speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=5"]
+}
+
+check("fanLimits: a template reference or junk gives nothing, so the model table applies") {
+    assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HPF008S").controlsConf) == [:]
+    assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HPF004S").controlsConf) == [:]
+    assert app.fanLimits(null) == [:]
+    assert app.fanLimits([control: "junk", extraConfigs: [[key: "control", value: "junk"]]]) == [:]
+    assert app.fanLimits([control: [[type: "Speed", items: [[value: 3]]]]]) == [:]
+    assert app.fanLimits([control: [[type: "Mode", items: [[text: "x", value: "high"]]]]]) == [:]
+}
+
+check("fanLimits: every Speed item counts; schedule modes only without a mode control") {
+    assert app.fanLimits([control: [[type: "Speed", items: [[value: 1], [value: 2], [value: 3], [value: 4]]]]]) == [speedRange: "1-4"]
+    assert app.fanLimits([extraConfigs: [[key: "control", value: [[type: "Speed", items: [[value: 1], [value: 6]]]]]]]) == [speedRange: "1-6"]
+    assert app.fanLimits([schedule: [modes: [[title: "device_fans_mode_straight", value: 1], [title: "device_control_mode_turbo", value: 5]]]]) ==
+        [modes: "normal=1,turbo=5"]
+    // Unknown texts keep Dreo's own name.
+    assert app.fanLimits([control: [[type: "Mode", items: [[text: "fan_2in1_breeze", value: 7]]]]]) == [modes: "fan_2in1_breeze=7"]
+}
+
+check("profile: controlsConf data overrides the model table, except speedFixed models") {
+    Map p = app.profile("DR-HTF004S", [:], [:], [speedRange: "1-12", modes: "normal=1,auto=2"])
+    assert p.min == 1 && p.max == 12 && p.modes == [["normal", 1], ["auto", 2]]
+    Map q = app.profile("DR-HTF004S", [:], [:], [:])
+    assert q.max == 9 && q.modes == app.MODE_LISTS.basic
+    // Garbled data values fall back too.
+    Map g = app.profile("DR-HAF001S", [:], [:], [speedRange: "fast", modes: "normal"])
+    assert g.max == 4 && g.modes == app.MODE_LISTS.basic
+    assert app.profile("DR-HTF007S", [:], [:], [speedRange: "1-4"]).max == 8
+    // The fan's speedSteps preference still wins.
+    assert app.profile("DR-HTF004S", [:], [speedSteps: 6], [speedRange: "1-12"]).max == 6
+}
+
+check("dreoEvents use the device's controlsConf data values") {
+    FakeDevice d = new FakeDevice(id: 1, deviceNetworkId: "dreo-SN1", name: "x",
+        data: [model: "DR-HCF002S", sn: "SN1", speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=5"])
+    Map ev = app.dreoEvents(d, [fanon: true, mode: 5, windlevel: 3]).collectEntries { [(it.child ? "${it.child}.${it.name}" : it.name): it.value] }
+    assert ev.mode == "auto" && ev.speed == "auto"
+    assert json(ev.supportedModes) == ["normal", "natural", "sleep", "auto"]
+    assert app.dreoCommand(d, [fanon: true, mode: 1], "setMode", ["reverse"]) == null
+}
+
 Check.finish()

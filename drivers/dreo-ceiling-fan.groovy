@@ -35,7 +35,7 @@ metadata {
         attribute "healthStatus", "enum", ["online", "offline"]
 
         command "setSpeedLevel", [[name: "Speed (1 to 12)*", type: "ENUM", description: "The speed number as in the Dreo app (maxSpeedLevel is this fan's top one); a number above it uses the top speed", constraints: SPEED_LEVELS]]
-        command "setMode", [[name: "Mode*", type: "ENUM", description: "Fan mode to set", constraints: ["normal", "natural", "sleep", "reverse"]]]
+        command "setMode", [[name: "Mode*", type: "ENUM", description: "Fan mode to set; this fan's modes are in supportedModes", constraints: ["normal", "natural", "sleep", "reverse", "auto"]]]
         command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed", constraints: ["on", "off"]]]
         command "setChildLock", [[name: "Child lock*", type: "ENUM", description: "Lock the fan's buttons", constraints: ["on", "off"]]]
     }

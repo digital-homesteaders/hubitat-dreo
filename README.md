@@ -142,14 +142,24 @@ Fans have no percentage level (SwitchLevel), as with the Govee integration:
 speed is the Dreo app's number, so voice assistants and dashboards see a fan,
 not a dimmer.
 
-If a model's speed range is wrong, set **Number of speed steps** in the fan's
+Each fan's speed range and modes come from its own entry in Dreo's device
+list (`controlsConf`, the data the Dreo app builds its buttons from), read at
+discovery and kept as the device's `speedRange` and `modes` data values. Many
+models only get a template reference there (for example the DR-HPF004S and
+DR-HPF008S); those use the built-in model table from hass-dreo, and models
+missing from it use their family's defaults. The DR-HTF007S always uses the
+table (8 steps), since its device list says 4 on every hardware revision.
+
+If a speed range is still wrong, set **Number of speed steps** in the fan's
 preferences. A fan reporting a higher step than expected also widens the range
-by itself.
+by itself. After a Dreo app update, **Choose devices** then **Done** reads the
+device list again.
 
 ### Dreo Ceiling Fan
 
-Switch, FanControl and the 1–12 speed number drive the fan motor (`fanon`), with modes normal,
-natural, sleep and reverse. The main light becomes a **Dreo Ceiling Light**
+Switch, FanControl and the 1–12 speed number drive the fan motor (`fanon`), with the
+modes the fan's device list gives (normal, natural, sleep and reverse on most;
+auto instead of reverse on the DR-HCF002S). The main light becomes a **Dreo Ceiling Light**
 child (Switch, SwitchLevel, ColorTemperature 2700–6500 K). Ceiling fans put
 every load behind a `poweron` gate; the app adds the gate keys to each command
 the way the Dreo app does.
@@ -197,8 +207,9 @@ attributes.
   and other Dreo devices; on humidifiers, the RGB humidity-indicator light
   (DR-HHM015S), light colours and brightness levels, resetting the filter and
   cleaning counters.
-- Models not in the built-in table use their family's defaults (towers and
-  circulators 1–9 with normal/natural/sleep/auto; ceiling fans 1–12 with
+- Models whose device list has no speed or mode data and that aren't in the
+  built-in table use their family's defaults (towers and circulators 1–9 with
+  normal/natural/sleep/auto; ceiling fans 1–12 with
   normal/natural/sleep/reverse).
 - Fan state is kept on the fan device. Two reports arriving at exactly the
   same moment can, rarely, overwrite each other; the next report or the

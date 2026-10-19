@@ -1,0 +1,101 @@
+{
+ "source": "hass-dreo tests/pydreo/api_responses: get_devices_HPF025S.json, get_device_state_HPF025S_1.json",
+ "device": {
+  "model": "DR-HPF025S",
+  "series": null,
+  "seriesName": "PF025S",
+  "productId": "1925377202249068545",
+  "productName": "Air Circulator",
+  "type": 0,
+  "brand": "Dreo",
+  "color": "s",
+  "controlsConf": {
+   "template": "DR-HPF025S",
+   "control": [
+    {
+     "id": "100",
+     "type": "Mode",
+     "title": "device_mode",
+     "items": [
+      {
+       "text": "device_fans_mode_straight",
+       "cmd": "mode",
+       "value": 1
+      },
+      {
+       "text": "device_control_mode_auto",
+       "cmd": "mode",
+       "value": 2
+      },
+      {
+       "text": "device_control_mode_sleep",
+       "cmd": "mode",
+       "value": 3
+      },
+      {
+       "text": "device_fans_mode_natural",
+       "cmd": "mode",
+       "value": 4
+      },
+      {
+       "text": "device_fans_mode_turbo",
+       "cmd": "mode",
+       "value": 5
+      }
+     ]
+    },
+    {
+     "id": "110",
+     "type": "Speed",
+     "title": "device_control_speed",
+     "items": [
+      {
+       "text": "1",
+       "cmd": "windlevel",
+       "value": 1
+      },
+      {
+       "text": "9",
+       "cmd": "windlevel",
+       "value": 9
+      }
+     ]
+    },
+    {
+     "id": "130",
+     "type": "DPad",
+     "step": 5
+    }
+   ],
+   "category": "Air Circulators"
+  },
+  "mainConf": {
+   "isSmart": true,
+   "isWifi": true,
+   "isBluetooth": true,
+   "isVoiceControl": true
+  }
+ },
+ "state": {
+  "alignon": true,
+  "childlockon": false,
+  "connected": true,
+  "hangleadj": 0,
+  "hoscangle": "0,0",
+  "lighton": false,
+  "mcu_firmware_version": "1.0.0",
+  "mode": 1,
+  "module_firmware_version": "3.4.7",
+  "module_hardware_model": "HeFi",
+  "muteon": false,
+  "network_latency": 32,
+  "oscmode": 0,
+  "poweron": true,
+  "temperature": 74,
+  "vangleadj": 0,
+  "voscangle": 0,
+  "wifi_rssi": -63,
+  "windlevel": 5,
+  "wrong": 0
+ }
+}
