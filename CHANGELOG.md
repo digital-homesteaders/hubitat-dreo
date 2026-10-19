@@ -21,9 +21,6 @@ and every driver, then press **Done** in the app.
   ceiling-fan mode dropdown gains auto. **Done** now reads the device list
   again, so existing devices pick this up without a visit to **Choose
   devices** (before, a re-pasted app kept capping the DR-HTF004S at 9).
-- The DR-HPF004S no longer offers turbo and custom: they were in hass-dreo's
-  table, but the fan ignores them. After **Done**, `supportedModes` lists
-  normal, natural, sleep and auto.
 - **Log raw Dreo data** tags each device with a short hash of its serial
   number instead of its last four characters, which were the same on every fan.
 - Tests: the author's real devices (and hass-dreo's samples) run through

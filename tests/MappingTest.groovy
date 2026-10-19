@@ -208,8 +208,7 @@ check("setMode") {
     assert cmd("DR-HTF011S", ON9, "setMode", ["sleep"]) == [mode: 3]
     assert cmd("DR-HTF011S", OFF9, "setMode", ["natural"]) == [poweron: true, mode: 2]
     assert cmd("DR-HPF008S", [poweron: true, mode: 1], "setMode", ["turbo"]) == [mode: 5]
-    assert cmd("DR-HPF007S", [poweron: true, mode: 1], "setMode", ["custom"]) == [mode: 6]
-    throwsIAE { cmd("DR-HPF004S", [poweron: true, mode: 1], "setMode", ["turbo"]) }
+    assert cmd("DR-HPF004S", [poweron: true, mode: 1], "setMode", ["custom"]) == [mode: 6]
     assert cmd("DR-HPF025S", [poweron: true, mode: 1], "setMode", ["natural"]) == [mode: 4]
     assert cmd("DR-HCF001S", [poweron: true, fanon: true, mode: 1], "setMode", ["reverse"]) == [mode: 4]
     throwsIAE { cmd("DR-HTF011S", ON9, "setMode", ["turbo"]) }
@@ -505,7 +504,7 @@ check("dreoEvents: ring hue/saturation left alone when they already give the col
 }
 
 check("dreoEvents: two-axis hoscon/voscon and windtype modes") {
-    Map e = events("DR-HPF007S", [poweron: true, windlevel: 1, windtype: 6, hoscon: false, voscon: true])
+    Map e = events("DR-HPF004S", [poweron: true, windlevel: 1, windtype: 6, hoscon: false, voscon: true])
     assert e.oscillation == "vertical" && e.mode == "custom" && e.speed == "low"
     assert json(e.supportedOscillation) == ["off", "horizontal", "vertical", "both"]
     // No display key reported: no display choices either.
@@ -805,16 +804,17 @@ check("fanLimits: a template reference or junk gives nothing, so the model table
     assert app.fanLimits([control: [[type: "Mode", items: [[text: "x", value: "high"]]]]]) == [:]
 }
 
-check("fanLimits: the test devices") {
-    // Its schedule also lists turbo 5 and custom 6, which the fan ignores: only the mode buttons count.
-    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HPF004S-1").controlsConf) ==
-        [speedRange: "1-9", modes: "normal=1,natural=2,sleep=3,auto=4"]
+check("fanLimits: the test DR-HPF004S keeps turbo and custom, which its table and schedule both list") {
+    Map conf = fixtureDevice("digital-homesteaders", "DR-HPF004S-1").controlsConf
+    assert app.fanLimits(conf, "DR-HPF004S") == [speedRange: "1-9", modes: "normal=1,natural=2,sleep=3,auto=4,turbo=5,custom=6"]
+    // Without the model, only the mode buttons.
+    assert app.fanLimits(conf).modes == "normal=1,natural=2,sleep=3,auto=4"
     // The test DR-HTF004S isn't in the table: its own list says 1-12, not the family's 1-9.
-    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HTF004S").controlsConf) ==
+    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HTF004S").controlsConf, "DR-HTF004S") ==
         [speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=4"]
-    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HAF001S").controlsConf) ==
+    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HAF001S").controlsConf, "DR-HAF001S") ==
         [speedRange: "1-4", modes: "normal=1,natural=2,sleep=3,auto=4"]
-    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HPF008S").controlsConf) == [:]
+    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HPF008S").controlsConf, "DR-HPF008S") == [:]
 }
 
 check("humidifierLimits: the test DR-HHM001S, where humRange (30-90, MCU 0.7.1+) beats the schedule's 80") {

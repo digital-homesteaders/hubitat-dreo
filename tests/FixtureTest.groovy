@@ -18,8 +18,7 @@ import static Check.check
 // What each model must show after its fixture state (attribute -> value), where we know it.
 @Field Map EXPECT = [
     "DR-HAF001S": [maxSpeedLevel: 4, supportedModes: ["normal", "natural", "sleep", "auto"]],
-    // The test units ignore hass-dreo's turbo and custom; their mode buttons and the table agree.
-    "DR-HPF004S": [maxSpeedLevel: 9, supportedModes: ["normal", "natural", "sleep", "auto"]],
+    "DR-HPF004S": [maxSpeedLevel: 9, supportedModes: ["normal", "natural", "sleep", "auto", "turbo", "custom"]],
     "DR-HPF008S": [maxSpeedLevel: 9, supportedModes: ["normal", "natural", "sleep", "auto", "turbo"]],
     "DR-HPF025S": [maxSpeedLevel: 9, supportedModes: ["normal", "auto", "sleep", "natural", "turbo"]],
     "DR-HTF005S": [maxSpeedLevel: 9, supportedModes: ["normal", "natural", "sleep", "auto"]],
@@ -82,7 +81,7 @@ new File(root, "tests/fixtures").eachFileRecurse { File f ->
         app.discoverDevices([list: [fx.device + [deviceId: "1", sn: "FX1", deviceName: "Fixture"]]], [:])
         app.discoverRooms(null, [:])
         hub.settle()
-        Map limits = app.fanLimits(fx.device.controlsConf)
+        Map limits = app.fanLimits(fx.device.controlsConf, model)
         app.settings.selectedFans = ["FX1"]
         app.updated()
         hub.settle()
