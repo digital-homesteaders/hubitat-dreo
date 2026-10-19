@@ -106,8 +106,10 @@ itself still needs checking.
 8. Humidifier (DR-HHM001S): its commands work (see above), and its real state
    and device list are in the tests (target range 30–90 %; its
    `connected: false` that day was right: it was unplugged, and the app showed
-   it offline). Still to check: what `wrong` reports with the tank lifted off,
-   and targets above 80 % (the range the device list gives newer firmware).
+   it offline). Left open (the author's test unit has gone back to its
+   owner; reports from other owners welcome): what `wrong` reports with the
+   tank lifted off, and targets above 80 % (the range the device list gives
+   newer firmware).
 9. Offline handling: unplug a fan and plug it back in, then send a command
    straight away (it should go out once the app has re-read the fan); with
    the hub's internet cut for over 2 minutes, every Dreo device's
