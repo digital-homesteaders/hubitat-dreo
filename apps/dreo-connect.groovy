@@ -147,7 +147,8 @@ preferences {
     // Rejects a new head position while the head still moves; stacked rejects can need recalibration.
     "DR-HAF004S": [settle: 8],
     "DR-HAF008S": [speed: [1, 9], modes: "turbo"],
-    "DR-HPF004S": [speed: [1, 9], modes: "custom", h: [-75, 75], v: [-30, 90]],
+    // hass-dreo lists turbo and custom too; the two test units ignore both (2026-10-18).
+    "DR-HPF004S": [speed: [1, 9], modes: "basic", h: [-75, 75], v: [-30, 90]],
     "DR-HPF005S": [speed: [1, 10], modes: "custom", h: [-60, 60]],
     "DR-HPF007S": [speed: [1, 10], modes: "custom", h: [-75, 75], v: [-30, 90]],
     "DR-HPF008S": [speed: [1, 9], modes: "turbo", ring: [1, 3], v: [-30, 90]],
@@ -665,7 +666,7 @@ def discoverDevices(data, Map ctx) {
         if (kind) {
             found[d.sn] = [name: d.deviceName ?: d.model, model: d.model, series: d.seriesName]
             try {
-                found[d.sn].limits = kind == "humidifier" ? humidifierLimits(d.controlsConf) : fanLimits(d.controlsConf, d.model)
+                found[d.sn].limits = kind == "humidifier" ? humidifierLimits(d.controlsConf) : fanLimits(d.controlsConf)
             } catch (e) {
                 log.warn "Dreo: could not read ${d.model} limits (${e}); using defaults"
             }
@@ -1133,12 +1134,11 @@ private Map profile(String model, Map s, Map opts, Map conf = [:]) {
  * models get only a template reference ({template: ...}); then nothing is
  * returned and the model table applies. Per hass-dreo's parse_speed_range and
  * parse_preset_modes, except that the main control comes before extraConfigs.
- * Modes: the mode buttons (Mode, or CFFan on ceiling fans); turbo or custom,
- * which some fans offer outside the buttons, count where the model table has
- * them and the fan's own schedule lists them with the same value (DR-HPF004S).
- * Without mode buttons, the schedule's modes.
+ * Modes: the mode buttons (Mode, or CFFan on ceiling fans). Schedules can list
+ * more (turbo 5 and custom 6 on the test DR-HPF004S, which ignores both), so
+ * they count only when there are no mode buttons.
  */
-Map fanLimits(def conf, String model = null) {
+Map fanLimits(def conf) {
     Map out = [:]
     if (!(conf instanceof Map)) return out
     List controls = (conf.control instanceof List ? conf.control : []).findAll { it instanceof Map && it.items instanceof List }
@@ -1164,16 +1164,8 @@ Map fanLimits(def conf, String model = null) {
     }
     // Ceiling fans list their modes under CFFan.
     controls.findAll { it.type in ["Mode", "CFFan"] }.each { c -> c.items.each { if (it instanceof Map) add(it.text, it.value) } }
-    List scheduled = []
-    (conf.schedule instanceof Map && conf.schedule.modes instanceof List ? conf.schedule.modes : []).each { m ->
-        if (m instanceof Map && "${m.value}" ==~ /\d+/) scheduled << [MODE_TEXT[m.title] ?: m.title?.toString(), "${m.value}" as int]
-    }
-    if (modes) {
-        String prefix = FAMILIES.keySet().find { model?.startsWith(it) }
-        String listName = MODELS[model]?.modes ?: (prefix ? FAMILIES[prefix].modes : null)
-        (MODE_LISTS[listName] ?: []).findAll { it in scheduled }.each { add(it[0], it[1]) }
-    } else {
-        scheduled.each { add(it[0], it[1]) }
+    if (!modes && conf.schedule instanceof Map && conf.schedule.modes instanceof List) {
+        conf.schedule.modes.each { if (it instanceof Map) add(it.title, it.value) }
     }
     if (modes) out.modes = modes.sort { it[1] }.collect { "${it[0]}=${it[1]}" }.join(",")
     return out

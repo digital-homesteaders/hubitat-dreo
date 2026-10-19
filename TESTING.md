@@ -76,6 +76,9 @@ itself still needs checking.
 - DR-HTF004S (unreleased code, 2026-10-18): after re-pasting the app and
   pressing **Done**, speeds 11 and 12 from Hubitat change the fan's speed
   (its 1–12 range comes from its device list).
+- DR-HPF004S: normal, natural, sleep and auto work from Hubitat; turbo and
+  custom (in hass-dreo's table and the fan's schedule) do nothing, so the app
+  no longer offers them.
 
 ## Still needs a hub
 
@@ -91,7 +94,7 @@ itself still needs checking.
    and device lists are now in the tests, so what remains is that each fan does
    what the params say, including `medium` on the 4-step DR-HAF001S, the
    DR-HTF004S's other commands (its speeds 11–12 are confirmed above), and
-   turbo/custom on the DR-HPF004S (from its schedule, not its mode buttons).
+   the DR-HPF004S's head, oscillation and display commands.
 6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
    effects.
 7. Ceiling fan (when it arrives): the power gate and light child on the real

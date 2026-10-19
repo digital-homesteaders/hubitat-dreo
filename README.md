@@ -148,9 +148,9 @@ discovery and kept as the device's `speedRange` and `modes` data values. For
 example, the DR-HTF004S, which isn't in hass-dreo's table, gets 1–12. Some
 models only get a template reference there (the DR-HPF008S, for one); those
 use the built-in model table from hass-dreo, and models missing from it use
-their family's defaults. Turbo and custom, which some fans offer outside the
-mode buttons, count where the table has them and the fan's own schedule lists
-them (the DR-HPF004S has both). The DR-HTF007S always uses the table
+their family's defaults. Modes are the fan's mode buttons; extra modes that
+only its schedule lists are left out (the DR-HPF004S's schedule names turbo
+and custom, but the fan ignores both). The DR-HTF007S always uses the table
 (8 steps), since its device list says 4 on every hardware revision.
 
 If a speed range is still wrong, set **Number of speed steps** in the fan's
