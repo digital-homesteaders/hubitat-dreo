@@ -1,0 +1,505 @@
+{
+ "source": "A maintainer's test device, \"Log raw Dreo data\" on a C-8, Dreo Connect 0.2.0, 2026-10-18",
+ "device": {
+  "brand": "Dreo",
+  "color": "s",
+  "controlsConf": {
+   "cards": [
+    {
+     "icon": "",
+     "image": "",
+     "key": "",
+     "show": true,
+     "title": "",
+     "type": 8,
+     "url": "dreo://nav/device/schedule?deviceSn={sn}"
+    },
+    {
+     "icon": "",
+     "image": "",
+     "show": true,
+     "title": "device_control_temp",
+     "type": 2,
+     "url": ""
+    },
+    {
+     "icon": "ic_setting",
+     "image": "",
+     "key": "setting",
+     "show": true,
+     "title": "device_settings_title",
+     "type": 6,
+     "url": "dreo://nav/device/setting?deviceSn=${sn}"
+    },
+    {
+     "icon": "https://resources.dreo-tech.com/app/202312/4/c06d58240e114f019c92abf5d3bd6f8c.png",
+     "image": "",
+     "minVersion": "2.6.8",
+     "show": true,
+     "title": "base_clean_tutorial",
+     "type": 6,
+     "url": "https://m.dreo.com/guides/product-clean/pedestal-fan/polyfan-704s?fullScreen=true&utm_source=device_card&utm_medium=app"
+    }
+   ],
+   "category": "Air Circulators",
+   "control": [
+    {
+     "id": "100",
+     "items": [
+      {
+       "cmd": "mode",
+       "image": "ic_normal_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#25D7E4"
+       ],
+       "text": "device_fans_mode_straight",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 1
+      },
+      {
+       "cmd": "mode",
+       "image": "ic_auto_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#0A80F5"
+       ],
+       "text": "device_control_mode_auto",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 4
+      },
+      {
+       "cmd": "mode",
+       "image": "ic_sleep_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#6249DF"
+       ],
+       "text": "device_control_mode_sleep",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 3
+      },
+      {
+       "cmd": "mode",
+       "image": "ic_natural_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#2CDD96"
+       ],
+       "text": "device_fans_mode_natural",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 2
+      }
+     ],
+     "title": "device_mode",
+     "type": "Mode"
+    },
+    {
+     "id": "110",
+     "items": [
+      {
+       "cmd": "windlevel",
+       "text": "1",
+       "value": 1
+      },
+      {
+       "cmd": "windlevel",
+       "text": "9",
+       "value": 9
+      }
+     ],
+     "title": "device_control_speed",
+     "type": "Speed"
+    },
+    {
+     "id": "130",
+     "step": 5,
+     "type": "DPad"
+    }
+   ],
+   "customLevel": [
+    0,
+    3,
+    6,
+    9
+   ],
+   "extraConfigs": [
+    {
+     "firmware": {
+      "mcuModel": "",
+      "minMcuVer": "0.4.6",
+      "minModuleVer": "3.2.7",
+      "moduleModel": ""
+     },
+     "key": "preference",
+     "value": [
+      {
+       "cmd": "lightmode",
+       "id": "210",
+       "image": "ic_display",
+       "reverse": false,
+       "title": "dev_ctrl_display",
+       "type": "Light Detection"
+      }
+     ]
+    }
+   ],
+   "feature": {
+    "schedule": {
+     "enable": "",
+     "localSupport": true,
+     "module": [
+      {
+       "type": "HeFi",
+       "version": "0.0.1"
+      }
+     ]
+    }
+   },
+   "lottie": {
+    "frames": [
+     {
+      "frame": [
+       0
+      ],
+      "value": 0
+     },
+     {
+      "frame": [
+       2
+      ],
+      "value": 1
+     }
+    ],
+    "key": "poweron"
+   },
+   "preference": [
+    {
+     "cmd": "lightsensoron",
+     "id": "210",
+     "image": "ic_lightsensoron",
+     "reverse": false,
+     "title": "device_control_lightdetection",
+     "type": "Light Detection"
+    },
+    {
+     "cmd": "muteon",
+     "id": "200",
+     "image": "ic_mute",
+     "reverse": true,
+     "title": "device_control_panelsound",
+     "type": "Panel Sound"
+    },
+    {
+     "cmd": "childlockon",
+     "id": "220",
+     "image": "ic_child_lock",
+     "reverse": false,
+     "title": "device_control_childlock",
+     "type": "Child Lock"
+    },
+    {
+     "id": "230",
+     "image": "ic_osc_cal",
+     "title": "device_control_calibration",
+     "type": "Oscillation Calibration"
+    },
+    {
+     "id": "240",
+     "image": "ic_temp_unit",
+     "title": "device_control_temp_unit",
+     "type": "Temperature Unit"
+    }
+   ],
+   "resource": {
+    "shakeImageFiles": "https://resources.dreo-tech.com/app/202407/9/ab8e70ef3d024038b5cd4fe4729608f7.zip",
+    "shakeImageList": [
+     {
+      "color": "g",
+      "url": "https://resources.dreo-tech.com/app/202411/15/48889f066e874d65b5a7c5d158ffd238.zip"
+     },
+     {
+      "color": "s",
+      "url": "https://resources.dreo-tech.com/app/202407/9/ab8e70ef3d024038b5cd4fe4729608f7.zip"
+     }
+    ]
+   },
+   "schedule": {
+    "modes": [
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "cruiseconf",
+       "oscmode",
+       "fixedconf"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 9,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 7,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_normal_wind_color",
+      "isSelected": true,
+      "title": "device_fans_mode_straight",
+      "value": 1,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "cruiseconf",
+       "oscmode",
+       "fixedconf"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 9,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 7,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_natural_wind_color",
+      "isSelected": false,
+      "title": "device_fans_mode_natural",
+      "value": 2,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "cruiseconf",
+       "oscmode",
+       "fixedconf"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 9,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 7,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_sleep_wind_color",
+      "isSelected": false,
+      "title": "device_fans_mode_sleep",
+      "value": 3,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "cruiseconf",
+       "oscmode",
+       "fixedconf"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 9,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 7,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_auto_wind_color",
+      "isSelected": false,
+      "title": "device_control_mode_auto",
+      "value": 4,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "poweron",
+       "cruiseconf",
+       "oscmode",
+       "fixedconf"
+      ],
+      "cmd": "mode",
+      "controls": [],
+      "icon": "ic_turbo_wind_color",
+      "isSelected": false,
+      "title": "device_control_mode_turbo",
+      "value": 5,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "cruiseconf",
+       "oscmode",
+       "fixedconf"
+      ],
+      "cmd": "mode",
+      "controls": [],
+      "icon": "ic_custom_wind",
+      "isSelected": false,
+      "title": "device_control_custom",
+      "value": 6,
+      "valueType": 1
+     }
+    ]
+   },
+   "swingAngle": {
+    "fixedAngle": {
+     "horAngle": 150,
+     "horZeroAngle": 75,
+     "imgColumn": 11,
+     "imgRow": 9,
+     "verAngle": 120,
+     "verZeroAngle": 30
+    },
+    "horSwingAngle": {
+     "angle": 150,
+     "dottedLines": [
+      15,
+      165
+     ],
+     "quickStep": [
+      30,
+      60,
+      90,
+      120,
+      150
+     ]
+    },
+    "verSwingAngle": {
+     "dottedLines": [
+      150,
+      270
+     ],
+     "quickStep": [
+      30,
+      60,
+      90,
+      120
+     ],
+     "startAngle": 150,
+     "stepAngle": 5,
+     "sweepAngle": 120
+    }
+   },
+   "template": "DR-HPF004S",
+   "version": {
+    "minControlVer": "2.6.10",
+    "minPairingVer": "2.0.7"
+   }
+  },
+  "mainConf": {
+   "isBluetooth": null,
+   "isSmart": true,
+   "isVoiceControl": true,
+   "isWifi": true
+  },
+  "model": "DR-HPF004S",
+  "productId": "1706129276403773442",
+  "productName": "Air Circulator",
+  "series": null,
+  "seriesName": "704S",
+  "type": 0
+ },
+ "state": {
+  "_ota": 2,
+  "alignon": true,
+  "childlockon": false,
+  "connected": true,
+  "cruiseconf": "30,45,-30,-45",
+  "customconf": "temp:23333334444446666668888889",
+  "fixedconf": "-25,5",
+  "lightmode": 0,
+  "lightsensoron": false,
+  "mcu_firmware_version": "0.4.8",
+  "mcu_hardware_model": "SC95F8613B/US",
+  "mcuon": true,
+  "mode": 1,
+  "module_firmware_version": "3.8.9",
+  "module_hardware_model": "HeFi",
+  "muteon": true,
+  "network_latency": 99,
+  "oscmode": 0,
+  "poweron": true,
+  "scheid": 440464968,
+  "scheon": true,
+  "temperature": 74,
+  "timeroff": {
+   "du": 0,
+   "ts": 1788117496
+  },
+  "timeron": {
+   "du": 0,
+   "ts": 1788117496
+  },
+  "wifi_rssi": -33,
+  "windlevel": 3,
+  "wrong": 0
+ }
+}

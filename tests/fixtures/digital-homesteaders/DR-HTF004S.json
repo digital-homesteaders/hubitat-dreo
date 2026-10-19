@@ -1,0 +1,404 @@
+{
+ "source": "A maintainer's test device, \"Log raw Dreo data\" on a C-8, Dreo Connect 0.2.0, 2026-10-18",
+ "device": {
+  "brand": "Dreo",
+  "color": "s",
+  "controlsConf": {
+   "cards": [
+    {
+     "icon": "",
+     "image": "",
+     "show": true,
+     "title": "device_control_temp",
+     "type": 2,
+     "url": ""
+    },
+    {
+     "icon": "",
+     "image": "",
+     "key": "",
+     "minVersion": "2.5.0",
+     "show": true,
+     "title": "",
+     "type": 8,
+     "url": "dreo://nav/device/schedule?deviceSn={sn}"
+    },
+    {
+     "icon": "ic_setting",
+     "image": "",
+     "key": "setting",
+     "show": true,
+     "title": "device_settings_title",
+     "type": 6,
+     "url": "dreo://nav/device/setting?deviceSn=${sn}"
+    },
+    {
+     "icon": "https://resources.dreo-tech.com/app/202312/4/c06d58240e114f019c92abf5d3bd6f8c.png",
+     "image": "",
+     "minVersion": "2.6.8",
+     "show": true,
+     "title": "base_clean_tutorial",
+     "type": 6,
+     "url": "https://m.dreo.com/guides/product-clean/tower-fan/pilot-max-s?utm_source=device_card&utm_medium=app"
+    }
+   ],
+   "category": "Tower Fan",
+   "control": [
+    {
+     "id": "100",
+     "items": [
+      {
+       "cmd": "windtype",
+       "image": "ic_normal_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#25D7E4"
+       ],
+       "text": "device_fans_mode_straight",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 1
+      },
+      {
+       "cmd": "windtype",
+       "image": "ic_natural_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#2CDD96"
+       ],
+       "text": "device_fans_mode_natural",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 2
+      },
+      {
+       "cmd": "windtype",
+       "image": "ic_sleep_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#6249DF"
+       ],
+       "text": "device_control_mode_sleep",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 3
+      },
+      {
+       "cmd": "windtype",
+       "image": "ic_auto_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#0A80F5"
+       ],
+       "text": "device_control_mode_auto",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 4
+      }
+     ],
+     "title": "device_mode",
+     "type": "Mode"
+    },
+    {
+     "id": "110",
+     "items": [
+      {
+       "cmd": "windlevel",
+       "text": "1",
+       "value": 1
+      },
+      {
+       "cmd": "windlevel",
+       "text": "12",
+       "value": 12
+      }
+     ],
+     "title": "device_control_speed",
+     "type": "Speed"
+    },
+    {
+     "cmd": "shakehorizon",
+     "id": "120",
+     "items": [
+      {
+       "cmd": "shakehorizonangle",
+       "text": "30\u00b0",
+       "value": 30
+      },
+      {
+       "cmd": "shakehorizonangle",
+       "text": "60\u00b0",
+       "value": 60
+      },
+      {
+       "cmd": "shakehorizonangle",
+       "text": "90\u00b0",
+       "value": 90
+      },
+      {
+       "cmd": "shakehorizonangle",
+       "text": "120\u00b0",
+       "value": 120
+      }
+     ],
+     "title": "device_control_oscillation",
+     "type": "Oscillation"
+    }
+   ],
+   "feature": {
+    "schedule": {
+     "enable": true,
+     "localSupport": true,
+     "module": [
+      {
+       "type": "HeFi",
+       "version": "3.2.2"
+      }
+     ]
+    }
+   },
+   "lottie": {
+    "frames": [
+     {
+      "frame": [
+       0
+      ],
+      "value": 0
+     },
+     {
+      "frame": [
+       2
+      ],
+      "value": 1
+     }
+    ],
+    "key": "poweron"
+   },
+   "preference": [
+    {
+     "cmd": "voiceon",
+     "id": "200",
+     "image": "ic_mute",
+     "reverse": false,
+     "title": "device_control_panelsound",
+     "type": "Panel Sound"
+    },
+    {
+     "cmd": "lightsensoron",
+     "id": "220",
+     "image": "ic_lightsensoron",
+     "reverse": false,
+     "title": "device_control_lightdetection",
+     "type": "Light Detection"
+    },
+    {
+     "id": "230",
+     "image": "ic_temp_unit",
+     "title": "device_control_temp_unit",
+     "type": "Temperature Unit"
+    },
+    {
+     "id": "250",
+     "image": "ic_temp_cal",
+     "title": "device_control_temp_calibration",
+     "type": "Temperature Calibration"
+    }
+   ],
+   "schedule": {
+    "modes": [
+     {
+      "attention": [
+       "windtype",
+       "windlevel",
+       "poweron",
+       "shakehorizon",
+       "shakehorizonangle"
+      ],
+      "cmd": "windtype",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 12,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 9,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_normal_wind_color",
+      "isSelected": true,
+      "title": "device_fans_mode_straight",
+      "value": 1,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "windtype",
+       "windlevel",
+       "poweron",
+       "shakehorizon",
+       "shakehorizonangle"
+      ],
+      "cmd": "windtype",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 12,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 9,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_natural_wind_color",
+      "isSelected": false,
+      "title": "device_fans_mode_natural",
+      "value": 2,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "windtype",
+       "windlevel",
+       "poweron",
+       "shakehorizon",
+       "shakehorizonangle"
+      ],
+      "cmd": "windtype",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 12,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 9,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_sleep_wind_color",
+      "isSelected": false,
+      "title": "device_fans_mode_sleep",
+      "value": 3,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "windtype",
+       "windlevel",
+       "poweron",
+       "shakehorizon",
+       "shakehorizonangle"
+      ],
+      "cmd": "windtype",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 12,
+        "groupId": 0,
+        "icon": "ic_sch_wind_speed",
+        "isSelected": false,
+        "startColor": "#0051CF",
+        "startValue": 1,
+        "title": "device_control_mode_manual_level",
+        "type": 0,
+        "value": 9,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_auto_wind_color",
+      "isSelected": false,
+      "title": "device_control_mode_auto",
+      "value": 4,
+      "valueType": 1
+     }
+    ]
+   },
+   "setting": [
+    {
+     "image": "image.png",
+     "text": "Firmware Version",
+     "url": "dreo://control",
+     "value": "1.0.0"
+    }
+   ],
+   "template": "DR-HTF004S"
+  },
+  "mainConf": {
+   "isBluetooth": null,
+   "isSmart": true,
+   "isVoiceControl": true,
+   "isWifi": true
+  },
+  "model": "DR-HTF004S",
+  "productId": "1453300621256003586",
+  "productName": "Tower Fan",
+  "series": null,
+  "seriesName": "714S",
+  "type": 0
+ },
+ "state": {
+  "_ota": 0,
+  "connected": true,
+  "lightsensoron": true,
+  "mcu_firmware_version": "0.0.3",
+  "mcu_hardware_model": "midea",
+  "mcuon": true,
+  "module_firmware_version": "3.8.3",
+  "module_hardware_model": "HeFi",
+  "network_latency": 47,
+  "poweron": true,
+  "scheid": -1777167802,
+  "scheon": true,
+  "shakehorizon": false,
+  "shakehorizonangle": 60,
+  "temperature": 78,
+  "timeroff": {
+   "du": 0,
+   "ts": 1783896410
+  },
+  "timeron": {
+   "du": 0,
+   "ts": 1783896410
+  },
+  "voiceon": true,
+  "wifi_rssi": -36,
+  "windlevel": 9,
+  "windtype": 1,
+  "wrong": 0
+ }
+}

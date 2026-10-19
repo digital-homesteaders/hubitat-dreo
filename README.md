@@ -144,11 +144,14 @@ not a dimmer.
 
 Each fan's speed range and modes come from its own entry in Dreo's device
 list (`controlsConf`, the data the Dreo app builds its buttons from), read at
-discovery and kept as the device's `speedRange` and `modes` data values. Many
-models only get a template reference there (for example the DR-HPF004S and
-DR-HPF008S); those use the built-in model table from hass-dreo, and models
-missing from it use their family's defaults. The DR-HTF007S always uses the
-table (8 steps), since its device list says 4 on every hardware revision.
+discovery and kept as the device's `speedRange` and `modes` data values. For
+example, the DR-HTF004S, which isn't in hass-dreo's table, gets 1–12. Some
+models only get a template reference there (the DR-HPF008S, for one); those
+use the built-in model table from hass-dreo, and models missing from it use
+their family's defaults. Turbo and custom, which some fans offer outside the
+mode buttons, count where the table has them and the fan's own schedule lists
+them (the DR-HPF004S has both). The DR-HTF007S always uses the table
+(8 steps), since its device list says 4 on every hardware revision.
 
 If a speed range is still wrong, set **Number of speed steps** in the fan's
 preferences. A fan reporting a higher step than expected also widens the range
@@ -194,8 +197,10 @@ samples.
 | `healthStatus` | online/offline; also offline while the cloud connection is down |
 
 The target-humidity and mist ranges come from the device list Dreo sends at
-discovery (30–80 % and mist 1–6 on the HM311S), falling back to 30–90 % and
-1–6. Mode, target or mist changes on a humidifier that is off also switch it on.
+discovery (30–90 % and mist 1–6 on the author's HM311S), falling back to 30–90 % and
+1–6. (Humidifiers with MCU firmware older than 0.7.1 may stop at 80 %, which
+the device list says only in a part the app doesn't read; a higher target is
+then refused by the humidifier.) Mode, target or mist changes on a humidifier that is off also switch it on.
 Hubitat has no humidifier capability, so rules use the custom commands and
 attributes.
 
@@ -234,7 +239,7 @@ re-reads it.
 data** in the app (under Logging): it writes each device's raw device-list
 entry and full state to **Logs**. Only model data is kept: no owner, home,
 room or device names, MAC or IP addresses, Wi-Fi name, or full serial numbers
-(the last four characters tell devices apart), so the log is safe to paste
+(a short tag made from the serial number tells devices apart), so the log is safe to paste
 into a forum post.
 
 **Debug logs.** Turn on **Debug logging** in the app (Logging section), on

@@ -1,0 +1,470 @@
+{
+ "source": "A maintainer's test device, \"Log raw Dreo data\" on a C-8, Dreo Connect 0.2.0, 2026-10-18",
+ "device": {
+  "brand": "Dreo",
+  "color": "3",
+  "controlsConf": {
+   "cards": [
+    {
+     "icon": "ic_mode_humidity",
+     "image": "",
+     "key": "humi",
+     "show": true,
+     "title": "home_humidity",
+     "type": 10,
+     "url": "dreo://nav/device/humireport?deviceSn=${sn}"
+    },
+    {
+     "icon": "",
+     "image": "",
+     "key": "",
+     "show": true,
+     "title": "",
+     "type": 8,
+     "url": "dreo://nav/device/schedule?deviceSn={sn}"
+    },
+    {
+     "icon": "",
+     "image": "",
+     "key": "",
+     "minMcuVersion": "0.7.6",
+     "minModuleVersion": "3.2.6",
+     "minVersion": "2.6.6",
+     "show": true,
+     "title": "",
+     "type": 3,
+     "url": ""
+    },
+    {
+     "icon": "ic_hum_cleanning",
+     "image": "",
+     "key": "worktime",
+     "show": true,
+     "title": "home_humidifier_cleaning",
+     "type": 3,
+     "url": "dreo://nav/device/humiclean?deviceSn=${sn}&start=30&end=300&step=10"
+    },
+    {
+     "icon": "https://resources.dreo-tech.com/app/202312/4/c06d58240e114f019c92abf5d3bd6f8c.png",
+     "image": "",
+     "show": true,
+     "title": "base_maintenance",
+     "type": 6,
+     "url": "https://fe.dreo.com/en/guides/humidifier-troubleshooting-maintenance"
+    },
+    {
+     "icon": "ic_setting",
+     "image": "",
+     "key": "setting",
+     "show": true,
+     "title": "device_settings_title",
+     "type": 6,
+     "url": "dreo://nav/device/setting?deviceSn=${sn}"
+    }
+   ],
+   "category": "Humidifier",
+   "extraConfigs": [
+    {
+     "firmware": {
+      "mcuModel": "",
+      "minMcuVer": "0.7.1",
+      "minModuleVer": "",
+      "moduleModel": ""
+     },
+     "key": "schedule",
+     "value": {
+      "modes": [
+       {
+        "attention": [
+         "mode",
+         "rhautolevel",
+         "rgblevel",
+         "poweron"
+        ],
+        "cmd": "mode",
+        "controls": [
+         {
+          "cmd": [
+           "rhautolevel"
+          ],
+          "endColor": "#4663F7",
+          "endValue": 90,
+          "groupId": 0,
+          "isSelected": false,
+          "startColor": "#1FD3E0",
+          "startValue": 30,
+          "title": "home_humidity",
+          "type": 0,
+          "unit": "%",
+          "value": 60,
+          "valueType": 1
+         }
+        ],
+        "icon": "ic_sch_item_auto",
+        "isSelected": true,
+        "title": "device_control_mode_auto",
+        "value": 1,
+        "valueType": 1
+       },
+       {
+        "attention": [
+         "mode",
+         "foglevel",
+         "rgblevel",
+         "poweron"
+        ],
+        "cmd": "mode",
+        "controls": [
+         {
+          "cmd": [
+           "foglevel"
+          ],
+          "endColor": "#4663F7",
+          "endValue": 6,
+          "groupId": 0,
+          "icon": "ic_sch_hum",
+          "isSelected": false,
+          "periodColor": "#0051CF",
+          "showValue": [
+           "1-",
+           "1",
+           "2-",
+           "2",
+           "3-",
+           "3"
+          ],
+          "startColor": "#1FD3E0",
+          "startValue": 0,
+          "title": "device_control_mode_manual_level",
+          "type": 1,
+          "validValue": 1,
+          "value": 6,
+          "valueType": 1
+         }
+        ],
+        "icon": "ic_sch_item_manual",
+        "isSelected": false,
+        "title": "device_control_mode_manual",
+        "value": 0,
+        "valueType": 1
+       },
+       {
+        "attention": [
+         "mode",
+         "rhsleeplevel",
+         "rgblevel",
+         "poweron"
+        ],
+        "cmd": "mode",
+        "controls": [
+         {
+          "cmd": [
+           "rhsleeplevel"
+          ],
+          "endColor": "#4663F7",
+          "endValue": 90,
+          "groupId": 0,
+          "isSelected": false,
+          "startColor": "#1FD3E0",
+          "startValue": 30,
+          "title": "home_humidity",
+          "type": 0,
+          "unit": "%",
+          "value": 60,
+          "valueType": 1
+         }
+        ],
+        "icon": "ic_sch_item_sleep",
+        "isSelected": false,
+        "title": "device_control_mode_sleep",
+        "value": 2,
+        "valueType": 1
+       }
+      ]
+     }
+    }
+   ],
+   "extraPreference": [
+    {
+     "id": "220",
+     "image": "ic_hum_light",
+     "title": "humidifier_light_setting",
+     "type": "Ambient Light Settings",
+     "version": {
+      "minMcuVer": "0.6.4",
+      "minModuleVer": "2.0.0"
+     }
+    }
+   ],
+   "feature": {
+    "schedule": {
+     "enable": "",
+     "localSupport": true,
+     "module": [
+      {
+       "type": "HeFi",
+       "version": "0.0.1"
+      }
+     ]
+    }
+   },
+   "humRange": {
+    "controlMax": 90,
+    "controlMin": 30,
+    "displayMax": 100,
+    "displayMin": 10,
+    "validMCUVersion": "0.7.1"
+   },
+   "lottie": {
+    "depend": {
+     "invalid": "0",
+     "key": "rgblevel"
+    },
+    "frames": [
+     {
+      "frame": [
+       0
+      ],
+      "value": 0
+     },
+     {
+      "frame": [
+       9
+      ],
+      "value": 1
+     },
+     {
+      "frame": [
+       7
+      ],
+      "value": 31
+     },
+     {
+      "frame": [
+       5
+      ],
+      "value": 61
+     }
+    ],
+    "key": "rh"
+   },
+   "preference": [
+    {
+     "cmd": "ledlevel",
+     "id": "210",
+     "image": "ic_display",
+     "reverse": false,
+     "title": "device_control_humidifier_display",
+     "type": "Display"
+    },
+    {
+     "cmd": "muteon",
+     "id": "200",
+     "image": "ic_mute",
+     "reverse": true,
+     "title": "device_control_panelsound",
+     "type": "Panel Sound"
+    }
+   ],
+   "schedule": {
+    "duration": [
+     {
+      "desc": "schedule_control_turnoff_never_desc",
+      "text": "schedule_control_turnoff_never",
+      "time": 0
+     },
+     {
+      "desc": "schedule_control_turnoff_30min_desc",
+      "text": "schedule_control_turnoff_30min",
+      "time": 1800
+     },
+     {
+      "desc": "schedule_control_turnoff_1h_desc",
+      "text": "schedule_control_turnoff_1h",
+      "time": 3600
+     },
+     {
+      "desc": "schedule_control_turnoff_2h_desc",
+      "text": "schedule_control_turnoff_2h",
+      "time": 7200
+     },
+     {
+      "desc": "schedule_control_turnoff_4h_desc",
+      "text": "schedule_control_turnoff_4h",
+      "time": 14400
+     },
+     {
+      "desc": "schedule_control_turnoff_6h_desc",
+      "text": "schedule_control_turnoff_6h",
+      "time": 21600
+     },
+     {
+      "desc": "schedule_control_turnoff_8h_desc",
+      "text": "schedule_control_turnoff_8h",
+      "time": 28800
+     }
+    ],
+    "modes": [
+     {
+      "attention": [
+       "mode",
+       "rhautolevel",
+       "rgblevel",
+       "poweron"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "rhautolevel"
+        ],
+        "endColor": "#4663F7",
+        "endValue": 80,
+        "groupId": 0,
+        "isSelected": false,
+        "startColor": "#1FD3E0",
+        "startValue": 30,
+        "title": "home_humidity",
+        "type": 0,
+        "unit": "%",
+        "value": 60,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_sch_item_auto",
+      "isSelected": true,
+      "title": "device_control_mode_auto",
+      "value": 1,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "foglevel",
+       "rgblevel",
+       "poweron"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "foglevel"
+        ],
+        "endColor": "#4663F7",
+        "endValue": 6,
+        "groupId": 0,
+        "icon": "ic_sch_hum",
+        "isSelected": false,
+        "periodColor": "#0051CF",
+        "showValue": [
+         "1-",
+         "1",
+         "2-",
+         "2",
+         "3-",
+         "3"
+        ],
+        "startColor": "#1FD3E0",
+        "startValue": 0,
+        "title": "device_control_mode_manual_level",
+        "type": 1,
+        "validValue": 1,
+        "value": 6,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_sch_item_manual",
+      "isSelected": false,
+      "title": "device_control_mode_manual",
+      "value": 0,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "rhsleeplevel",
+       "rgblevel",
+       "poweron"
+      ],
+      "cmd": "mode",
+      "controls": [],
+      "icon": "ic_sch_item_sleep",
+      "isSelected": false,
+      "title": "device_control_mode_sleep",
+      "value": 2,
+      "valueType": 1
+     }
+    ]
+   },
+   "template": "DR-HHM001S",
+   "urlConfig": [
+    {
+     "key": "clean",
+     "url": "https://fe.dreo.com/zh/guides/videos/youtube/4mfKQSkqZWo"
+    },
+    {
+     "key": "filter",
+     "url": "https://www.dreo.com/products/demineralization-cartridge-for-humidifiers-3-pack-for-humidifier-hm311-hm311s-hm524-hm524s?utm_source=app&utm_medium=hm311s-filter-page&utm_campaign=hm311s-filter-page"
+    },
+    {
+     "key": "maintenance",
+     "url": "https://fe.dreo.com/en/guides/humidifier-troubleshooting-maintenance"
+    }
+   ],
+   "version": {
+    "minControlVer": "2.1.3",
+    "minPairingVer": "2.1.3"
+   }
+  },
+  "mainConf": {
+   "isBluetooth": null,
+   "isSmart": true,
+   "isVoiceControl": true,
+   "isWifi": true
+  },
+  "model": "DR-HHM001S",
+  "productId": "1513802928134631426",
+  "productName": "Humidifier",
+  "series": null,
+  "seriesName": "311S/411S",
+  "type": 0
+ },
+ "state": {
+  "_ota": 2,
+  "connected": false,
+  "filteron": false,
+  "filtertime": 15,
+  "foglevel": 2,
+  "ledkepton": false,
+  "ledlevel": 2,
+  "lightsensoron": false,
+  "mcu_firmware_version": "2.3.0",
+  "mcu_hardware_model": "SC95F8613B-2/US",
+  "mcuon": true,
+  "mode": 0,
+  "module_firmware_version": "3.8.10",
+  "module_hardware_model": "HeFi",
+  "muteon": false,
+  "network_latency": 46,
+  "poweron": false,
+  "rgblevel": 2,
+  "rgbth": "30,60",
+  "rh": 48,
+  "rhautolevel": 50,
+  "rhsleeplevel": 70,
+  "scheid": 0,
+  "scheon": false,
+  "suspend": false,
+  "timeroff": {
+   "du": 0,
+   "ts": 1792351433
+  },
+  "timeron": {
+   "du": 0,
+   "ts": 1792351433
+  },
+  "wifi_rssi": -51,
+  "worktime": 5,
+  "wrong": 0
+ }
+}

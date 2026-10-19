@@ -24,6 +24,9 @@ import static Check.check
     "DR-HTF005S": [maxSpeedLevel: 9, supportedModes: ["normal", "natural", "sleep", "auto"]],
     "DR-HTF007S": [maxSpeedLevel: 8, supportedModes: ["normal", "natural", "sleep", "auto"]],
     "DR-HCF002S": [maxSpeedLevel: 12, supportedModes: ["normal", "natural", "sleep", "auto"]],
+    // Not in hass-dreo's table: the family guess was 1-9; its controlsConf says 1-12.
+    "DR-HTF004S": [maxSpeedLevel: 12, supportedModes: ["normal", "natural", "sleep", "auto"]],
+    "DR-HHM001S": [supportedModes: ["manual", "auto", "sleep"]],
 ]
 
 // Commands each driver offers, with the arguments to try ([] = none).
@@ -78,7 +81,7 @@ new File(root, "tests/fixtures").eachFileRecurse { File f ->
         app.discoverDevices([list: [fx.device + [deviceId: "1", sn: "FX1", deviceName: "Fixture"]]], [:])
         app.discoverRooms(null, [:])
         hub.settle()
-        Map limits = app.fanLimits(fx.device.controlsConf)
+        Map limits = app.fanLimits(fx.device.controlsConf, model)
         app.settings.selectedFans = ["FX1"]
         app.updated()
         hub.settle()
@@ -93,7 +96,13 @@ new File(root, "tests/fixtures").eachFileRecurse { File f ->
         app.fanStateDone(restState(fx.state), [sn: "FX1"])
         hub.settle()
         assert d.currentValue("switch") in ["on", "off"]
-        assert d.currentValue("healthStatus") == "online"
+        // Dreo's own word on whether the device is reachable.
+        assert d.currentValue("healthStatus") == (fx.state.connected == false ? "offline" : "online")
+        if (fx.state.connected == false) {
+            conn.parse(JsonOutput.toJson([devicesn: "FX1", method: "device-online", reported: [:]]))
+            hub.settle()
+            assert d.currentValue("healthStatus") == "online"
+        }
         (EXPECT[model] ?: [:]).each { attr, v ->
             def got = d.currentValue(attr)
             assert (got instanceof String && got.startsWith("[") ? json(got) : got) == v, "${attr}"
@@ -102,7 +111,7 @@ new File(root, "tests/fixtures").eachFileRecurse { File f ->
 
         // Every command: no exception, and only keys this fan itself reports are sent.
         Set known = fx.state.keySet()
-        List modeValues = d.currentValue("supportedModes") ? (app.fanLimits(fx.device.controlsConf).modes ?: "")
+        List modeValues = d.currentValue("supportedModes") ? (limits.modes ?: "")
             .split(",").findAll().collect { it.split("=")[1] as int } : []
         List cmds = humidifier ? humidifierCommands(d) : fanCommands(d, fx.state)
         Closure run = { FakeDevice target, List c ->

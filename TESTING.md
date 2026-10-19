@@ -39,6 +39,15 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   preference, a humidifier from discovery through reports and commands, and
   the password hash: written as a password-type setting, never left in state,
   and moved there from a 0.2 install's state.
+- **FixtureTest**: every file in `tests/fixtures/`, a real device-list entry
+  and full state in the **Log raw Dreo data** shape, goes through discovery,
+  device creation, a REST refresh, the events and every driver and light
+  command, on a fresh hub each. Commands may only send keys the device itself
+  reports, speeds within its top speed and mode values from its own list.
+  `digital-homesteaders/` holds the maintainers' test devices, logged on 2026-10-18 (DR-HAF001S,
+  DR-HTF004S, DR-HPF008S, 2× DR-HPF004S, DR-HHM001S); `hass-dreo/` holds
+  hass-dreo's samples (DR-HTF005S, DR-HTF007S, DR-HPF025S, DR-HCF002S and
+  others).
 
 To run them, get a JDK and Groovy 2.4 once (downloaded into the git-ignored
 `.tools/`; nothing is installed system-wide; or have `java` and `groovy` on
@@ -75,16 +84,19 @@ itself still needs checking.
    setting a speed; the 1–12 speed dropdown; head position, oscillation range
    and saved positions (and whether a fixed position needs oscillation off,
    which the app sends).
-5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): that the real state
-   keys match the samples in the tests, and each fan does what the params say,
-   including `medium` on the 4-step DR-HAF001S. The DR-HTF004S is not in
-   hass-dreo's table, so its speed range is a guess (1–9).
+5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): their real state
+   and device lists are now in the tests, so what remains is that each fan does
+   what the params say, including `medium` on the 4-step DR-HAF001S, speeds
+   10–12 on the DR-HTF004S (1–12 from its device list) and turbo/custom on the
+   DR-HPF004S (from its schedule, not its mode buttons).
 6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
    effects.
 7. Ceiling fan (when it arrives): the power gate and light child on the real
    fan.
-8. Humidifier (DR-HHM001S): the real state keys and `controlsConf` match the
-   hass-dreo samples; target humidity in Auto and Sleep, mist levels 1–6,
+8. Humidifier (DR-HHM001S): its real state and device list are in the tests
+   (target range 30–90 %). Still to check: why Dreo's REST state said
+   `connected: false` on 2026-10-18 (the app then shows it offline and holds
+   commands) and whether it was really offline; target humidity in Auto and Sleep, mist levels 1–6,
    display, panel sound, ambient light; what `wrong` reports with the tank
    lifted off.
 9. Offline handling: unplug a fan and plug it back in, then send a command

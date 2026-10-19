@@ -1,0 +1,403 @@
+{
+ "source": "A maintainer's test device, \"Log raw Dreo data\" on a C-8, Dreo Connect 0.2.0, 2026-10-18",
+ "device": {
+  "brand": "Dreo",
+  "color": "s",
+  "controlsConf": {
+   "cards": [
+    {
+     "icon": "",
+     "image": "",
+     "key": "",
+     "minVersion": "2.5.3",
+     "show": true,
+     "title": "",
+     "type": 8,
+     "url": "dreo://nav/device/schedule?deviceSn={sn}"
+    },
+    {
+     "icon": "",
+     "image": "",
+     "show": true,
+     "title": "device_control_temp",
+     "type": 2,
+     "url": ""
+    },
+    {
+     "icon": "ic_setting",
+     "image": "",
+     "key": "setting",
+     "show": true,
+     "title": "device_settings_title",
+     "type": 6,
+     "url": "dreo://nav/device/setting?deviceSn=${sn}"
+    },
+    {
+     "icon": "https://resources.dreo-tech.com/app/202312/4/c06d58240e114f019c92abf5d3bd6f8c.png",
+     "image": "",
+     "minVersion": "2.6.8",
+     "show": true,
+     "title": "base_clean_tutorial",
+     "type": 6,
+     "url": "https://m.dreo.com/guides/product-clean/air-circulator-fan/cf511s?fullScreen=true&utm_source=device_card&utm_medium=app"
+    }
+   ],
+   "category": "Air Circulators",
+   "control": [
+    {
+     "id": "100",
+     "items": [
+      {
+       "cmd": "mode",
+       "image": "ic_normal_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#25D7E4"
+       ],
+       "text": "device_fans_mode_straight",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 1
+      },
+      {
+       "cmd": "mode",
+       "image": "ic_natural_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#2CDD96"
+       ],
+       "text": "device_fans_mode_natural",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 2
+      },
+      {
+       "cmd": "mode",
+       "image": "ic_sleep_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#6249DF"
+       ],
+       "text": "device_control_mode_sleep",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 3
+      },
+      {
+       "cmd": "mode",
+       "image": "ic_auto_wind",
+       "imageColors": [
+        "#D5D6D7",
+        "#0A80F5"
+       ],
+       "text": "device_control_mode_auto",
+       "textColors": [
+        "#D5D6D7",
+        "#D5D6D7"
+       ],
+       "value": 4
+      }
+     ],
+     "title": "device_mode",
+     "type": "Mode"
+    },
+    {
+     "id": "110",
+     "items": [
+      {
+       "cmd": "windlevel",
+       "text": "1",
+       "value": 1
+      },
+      {
+       "cmd": "windlevel",
+       "text": "4",
+       "value": 4
+      }
+     ],
+     "title": "device_control_speed",
+     "type": "Speed"
+    },
+    {
+     "id": "130",
+     "step": 5,
+     "type": "DPad"
+    },
+    {
+     "cmd": "hoscon",
+     "id": "120",
+     "items": [],
+     "title": "device_control_oscillation",
+     "type": "Oscillation"
+    }
+   ],
+   "deviceType": 1,
+   "feature": {
+    "schedule": {
+     "enable": "",
+     "localSupport": true,
+     "module": [
+      {
+       "type": "HeFi",
+       "version": "3.2.2"
+      }
+     ]
+    }
+   },
+   "lottie": {
+    "frames": [
+     {
+      "frame": [
+       0
+      ],
+      "value": 0
+     },
+     {
+      "frame": [
+       2
+      ],
+      "value": 1
+     }
+    ],
+    "key": "poweron"
+   },
+   "preference": [
+    {
+     "cmd": "ledkepton",
+     "id": "210",
+     "image": "ic_display",
+     "reverse": true,
+     "title": "device_fans_mode_auto_display",
+     "type": "Display Auto Off"
+    },
+    {
+     "cmd": "muteon",
+     "id": "200",
+     "image": "ic_mute",
+     "reverse": true,
+     "title": "device_control_panelsound",
+     "type": "Panel Sound"
+    },
+    {
+     "cmd": "childlockon",
+     "id": "220",
+     "image": "ic_child_lock",
+     "reverse": false,
+     "title": "device_control_childlock",
+     "type": "Child Lock"
+    },
+    {
+     "id": "240",
+     "image": "ic_temp_unit",
+     "title": "device_control_temp_unit",
+     "type": "Temperature Unit"
+    }
+   ],
+   "schedule": {
+    "modes": [
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "hoscon"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 4,
+        "groupId": 0,
+        "icon": "",
+        "isSelected": false,
+        "periodColor": "#0051CF",
+        "startColor": "#0051CF",
+        "startValue": 0,
+        "title": "device_control_mode_manual_level",
+        "type": 1,
+        "validValue": 1,
+        "value": 3,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_normal_wind_color",
+      "isSelected": true,
+      "title": "device_fans_mode_straight",
+      "value": 1,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "hoscon"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 4,
+        "groupId": 0,
+        "icon": "",
+        "isSelected": false,
+        "periodColor": "#0051CF",
+        "startColor": "#0051CF",
+        "startValue": 0,
+        "title": "device_control_mode_manual_level",
+        "type": 1,
+        "validValue": 1,
+        "value": 3,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_natural_wind_color",
+      "isSelected": false,
+      "title": "device_fans_mode_natural",
+      "value": 2,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "hoscon"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 4,
+        "groupId": 0,
+        "icon": "",
+        "isSelected": false,
+        "periodColor": "#0051CF",
+        "startColor": "#0051CF",
+        "startValue": 0,
+        "title": "device_control_mode_manual_level",
+        "type": 1,
+        "validValue": 1,
+        "value": 3,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_sleep_wind_color",
+      "isSelected": false,
+      "title": "device_fans_mode_sleep",
+      "value": 3,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "windlevel",
+       "poweron",
+       "hoscon"
+      ],
+      "cmd": "mode",
+      "controls": [
+       {
+        "cmd": [
+         "windlevel"
+        ],
+        "endColor": "#0051CF",
+        "endValue": 4,
+        "groupId": 0,
+        "icon": "",
+        "isSelected": false,
+        "periodColor": "#0051CF",
+        "startColor": "#0051CF",
+        "startValue": 0,
+        "title": "device_control_mode_manual_level",
+        "type": 1,
+        "validValue": 1,
+        "value": 3,
+        "valueType": 1
+       }
+      ],
+      "icon": "ic_auto_wind_color",
+      "isSelected": false,
+      "title": "device_fans_mode_auto",
+      "value": 4,
+      "valueType": 1
+     },
+     {
+      "attention": [
+       "mode",
+       "poweron",
+       "hoscon"
+      ],
+      "cmd": "mode",
+      "controls": [],
+      "icon": "ic_custom_wind",
+      "isSelected": false,
+      "title": "device_control_custom",
+      "value": 6,
+      "valueType": 1
+     }
+    ]
+   },
+   "template": "DR-HAF001S",
+   "version": {
+    "minControlVer": "2.0.7",
+    "minPairingVer": "2.0.7"
+   }
+  },
+  "mainConf": {
+   "isBluetooth": null,
+   "isSmart": true,
+   "isVoiceControl": true,
+   "isWifi": true
+  },
+  "model": "DR-HAF001S",
+  "productId": "1572127056357535746",
+  "productName": "Air Circulator",
+  "series": null,
+  "seriesName": "511S/611S",
+  "type": 0
+ },
+ "state": {
+  "childlockon": false,
+  "connected": true,
+  "customconf": "temp:1111122222233333344444",
+  "hoscon": false,
+  "ledkepton": false,
+  "mcu_firmware_version": "1.0.17",
+  "mcu_hardware_model": "SC95F8613B",
+  "mcuon": true,
+  "mode": 1,
+  "module_firmware_version": "1.2.12",
+  "module_hardware_model": "PAI-051",
+  "muteon": true,
+  "network_latency": 166,
+  "poweron": true,
+  "temperature": 74,
+  "tempunit": 1,
+  "timeroff": {
+   "du": 0,
+   "ts": 1791262279
+  },
+  "timeron": {
+   "du": 0,
+   "ts": 1791262279
+  },
+  "wifi_rssi": -31,
+  "windlevel": 4
+ }
+}

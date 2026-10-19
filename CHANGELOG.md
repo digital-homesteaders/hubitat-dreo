@@ -14,6 +14,16 @@ and every driver, then press **Done** in the app.
   published.
 - Docs: Troubleshooting section, this changelog, and the testing notes moved
   to [TESTING.md](TESTING.md).
+- **Speed range and modes from each fan's own device list** (`controlsConf`),
+  read when devices are listed; the built-in table only covers models whose
+  list is a bare template. The DR-HTF004S now goes to 12 (was a 1–9 guess);
+  ceiling fans get their real modes (the DR-HCF002S has auto, not reverse); the
+  ceiling-fan mode dropdown gains auto. Press **Choose devices** then **Done**
+  so existing devices pick it up.
+- **Log raw Dreo data** tags each device with a short hash of its serial
+  number instead of its last four characters, which were the same on every fan.
+- Tests: the author's real devices (and hass-dreo's samples) run through
+  discovery, events and every command (`FixtureTest`).
 
 ## 0.2.0 (2026-10-18)
 

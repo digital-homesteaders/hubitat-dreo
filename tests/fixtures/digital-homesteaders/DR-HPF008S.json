@@ -1,0 +1,62 @@
+{
+ "source": "A maintainer's test device, \"Log raw Dreo data\" on a C-8, Dreo Connect 0.2.0, 2026-10-18",
+ "device": {
+  "brand": "Dreo",
+  "color": "s",
+  "controlsConf": {
+   "template": "DR-HPF008S"
+  },
+  "mainConf": {
+   "isBluetooth": null,
+   "isSmart": true,
+   "isVoiceControl": true,
+   "isWifi": true
+  },
+  "model": "DR-HPF008S",
+  "productId": "1813458665562238978",
+  "productName": "Air Circulator",
+  "series": null,
+  "seriesName": "508S",
+  "type": 0
+ },
+ "state": {
+  "_ota": 2,
+  "alignon": true,
+  "atmbri": 2,
+  "atmcolor": 5046527,
+  "atmmode": 3,
+  "atmon": false,
+  "atmspeed": 2,
+  "childlockon": false,
+  "connected": true,
+  "cruiseconf": "60,60,-30,-60",
+  "customconf": "temp:23366668888888888888888889",
+  "fanon": true,
+  "fixedconf": "-10,5",
+  "lightmode": 0,
+  "mcu_firmware_version": "0.2.9",
+  "mcu_hardware_model": "SC95F8615B/US",
+  "mcuon": true,
+  "mode": 1,
+  "module_firmware_version": "3.8.3",
+  "module_hardware_model": "HeFi",
+  "muteon": true,
+  "network_latency": 96,
+  "oscmode": 0,
+  "scheid": 63088759,
+  "scheon": false,
+  "temperature": 68,
+  "tempoffset": -5,
+  "timeroff": {
+   "du": 0,
+   "ts": 1784866446
+  },
+  "timeron": {
+   "du": 0,
+   "ts": 1784866446
+  },
+  "wifi_rssi": -24,
+  "windlevel": 9,
+  "wrong": 0
+ }
+}

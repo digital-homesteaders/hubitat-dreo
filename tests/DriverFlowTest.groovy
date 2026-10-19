@@ -693,8 +693,9 @@ check("raw data button logs model data only: no owner, home, room, mac, ssid or 
         module_hardware_mac: [state: "aa:bb"], ip: [state: "10.0.0.9"], module_ipaddr: [state: "10.0.0.9"]]],
         [sn: "SN0005", model: "DR-HHM001S"])
     List info = app.log.at("info")
-    assert info.any { it == 'Dreo raw device DR-HHM001S ...0005: {"model":"DR-HHM001S","seriesName":"HM311S","controlsConf":{"template":"DR-HHM001S"}}' }
-    assert info.any { it == 'Dreo raw state DR-HHM001S ...0005: {"filtertime":75,"worktime":12}' }
+    String tag = "#" + java.security.MessageDigest.getInstance("MD5").digest("SN0005".bytes).encodeHex().toString().take(6)
+    assert info.any { it == "Dreo raw device DR-HHM001S ${tag}: " + '{"model":"DR-HHM001S","seriesName":"HM311S","controlsConf":{"template":"DR-HHM001S"}}' }
+    assert info.any { it == "Dreo raw state DR-HHM001S ${tag}: " + '{"filtertime":75,"worktime":12}' }
     assert !info.findAll { it.startsWith("Dreo raw") }.any { it =~ /aa:bb|home|Example Home|owner@|Nursery|10\.0\.0\.9|SN0005/ }
 }
 

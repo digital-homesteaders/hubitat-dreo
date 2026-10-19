@@ -783,7 +783,7 @@ Map fixtureDevice(String dir, String model) {
 check("fanLimits: speed range and Mode control from real device lists") {
     assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HAF001S").controlsConf) ==
         [speedRange: "1-4", modes: "normal=1,natural=2,sleep=3,auto=4"]
-    // The schedule's extra modes (custom 6) don't count when there is a mode control.
+    // The schedule's custom 6 doesn't count: the table has no custom for this model.
     // DR-HTF005S also has a 1-12 Speed under extraConfigs, for one MCU only: the main control wins.
     assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HTF005S").controlsConf) ==
         [speedRange: "1-9", modes: "normal=1,natural=2,sleep=3,auto=4"]
@@ -802,6 +802,23 @@ check("fanLimits: a template reference or junk gives nothing, so the model table
     assert app.fanLimits([control: "junk", extraConfigs: [[key: "control", value: "junk"]]]) == [:]
     assert app.fanLimits([control: [[type: "Speed", items: [[value: 3]]]]]) == [:]
     assert app.fanLimits([control: [[type: "Mode", items: [[text: "x", value: "high"]]]]]) == [:]
+}
+
+check("fanLimits: the test DR-HPF004S keeps turbo and custom, which its table and schedule both list") {
+    Map conf = fixtureDevice("digital-homesteaders", "DR-HPF004S-1").controlsConf
+    assert app.fanLimits(conf, "DR-HPF004S") == [speedRange: "1-9", modes: "normal=1,natural=2,sleep=3,auto=4,turbo=5,custom=6"]
+    // Without the model, only the mode buttons.
+    assert app.fanLimits(conf).modes == "normal=1,natural=2,sleep=3,auto=4"
+    // The test DR-HTF004S isn't in the table: its own list says 1-12, not the family's 1-9.
+    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HTF004S").controlsConf, "DR-HTF004S") ==
+        [speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=4"]
+    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HAF001S").controlsConf, "DR-HAF001S") ==
+        [speedRange: "1-4", modes: "normal=1,natural=2,sleep=3,auto=4"]
+    assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HPF008S").controlsConf, "DR-HPF008S") == [:]
+}
+
+check("humidifierLimits: the test DR-HHM001S, where humRange (30-90, MCU 0.7.1+) beats the schedule's 80") {
+    assert app.humidifierLimits(fixtureDevice("digital-homesteaders", "DR-HHM001S").controlsConf) == [humidityRange: "30-90", mistRange: "1-6"]
 }
 
 check("fanLimits: every Speed item counts; schedule modes only without a mode control") {
