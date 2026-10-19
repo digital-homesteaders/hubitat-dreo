@@ -70,9 +70,12 @@ itself still needs checking.
 - Sign-in (North America) with the hashed password, discovery, and device
   creation for all the author's fans; the humidifier (DR-HHM001S) is
   discovered and added.
-- DR-HPF008S: pushed updates for power, named speeds and steps, all five
+- DR-HPF004S ("the DR-HPF004S"; first written up here as the DR-HPF008S, a guess
+  that turned out wrong): pushed updates for power, named speeds and steps,
   modes (Auto shows as speed `auto`), display auto/on/off and temperature in
   °F; commands sent from Hubitat take effect about as fast as the pushes.
+  Turbo and custom from Hubitat work (they come from hass-dreo's table and the
+  fan's schedule, not its mode buttons).
 - DR-HTF004S (unreleased code, 2026-10-18): after re-pasting the app and
   pressing **Done**, speeds 11 and 12 from Hubitat change the fan's speed
   (its 1–12 range comes from its device list).
@@ -85,15 +88,15 @@ itself still needs checking.
 2. **Choose devices** page: whether it works before the app's first **Done**.
 3. WebSocket over time: reconnect after a hub reboot (Initialize) or a lost
    network, and the no-acknowledgement reconnect.
-4. DR-HPF008S: oscillation, panel sound, child lock, and leaving Auto mode by
+4. DR-HPF004S: oscillation, panel sound, child lock, and leaving Auto mode by
    setting a speed; the 1–12 speed dropdown; head position, oscillation range
    and saved positions (and whether a fixed position needs oscillation off,
    which the app sends).
-5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): their real state
-   and device lists are now in the tests, so what remains is that each fan does
-   what the params say, including `medium` on the 4-step DR-HAF001S, the
-   DR-HTF004S's other commands (its speeds 11–12 are confirmed above), and
-   turbo/custom on the DR-HPF004S (from its schedule, not its mode buttons).
+5. The other fans (DR-HPF008S, DR-HAF001S, DR-HTF004S, the second DR-HPF004S):
+   their real state and device lists are now in the tests, so what remains is
+   that each fan does what the params say, including turbo and the `fanon`
+   power key on the DR-HPF008S, `medium` on the 4-step DR-HAF001S, and the
+   DR-HTF004S's other commands (its speeds 11–12 are confirmed above).
 6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
    effects.
 7. Ceiling fan (when it arrives): the power gate and light child on the real
