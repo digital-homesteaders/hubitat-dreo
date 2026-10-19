@@ -4,13 +4,14 @@ Control Dreo cloud fans and humidifiers from a Hubitat Elevation hub: tower
 fans, air circulators and ceiling fans, including ceiling lights and light
 rings, and DR-HHM humidifiers.
 
-> **Status: v0.1, early testing on a Hubitat C-8.** Installing, signing in,
-> discovery and device creation work, and on a DR-HPF008S live updates and
-> commands from Hubitat (power, speeds, modes, display, temperature) behave as
-> expected. The other features follow the protocol verified in the author's
-> Homey Dreo app and in
+> **Status: 0.2.0, early testing on a Hubitat C-8.** Installing, signing in,
+> discovery and device creation work for fans and a DR-HHM001S humidifier,
+> and on a DR-HPF008S live updates and commands from Hubitat (power, speeds,
+> modes, display, temperature) behave as expected. The other features follow
+> the protocol verified in the author's Homey Dreo app and in
 > [hass-dreo](https://github.com/JeffSteinbok/hass-dreo), but haven't been
-> checked on a hub yet. See [What needs testing](#what-needs-testing).
+> checked on a hub yet. [TESTING.md](TESTING.md) lists what has and hasn't
+> been confirmed; [CHANGELOG.md](CHANGELOG.md) lists what changed.
 
 ## How it works
 
@@ -58,8 +59,9 @@ versions go in the device's `firmware` data value.
 
 ### Hubitat Package Manager
 
-Not published yet. Once the repository is on GitHub, `packageManifest.json`
-needs its `GITHUB_OWNER` placeholders replaced.
+Not published yet. Once the repository is on GitHub, setting `OWNER` in
+`scripts/release.sh` and running it fills in the manifest's links and every
+file's `importUrl` (so each code page's **Import** button works too).
 
 ### Manually
 
@@ -82,17 +84,14 @@ Fans used to have a percentage level (SwitchLevel). After updating from 0.1,
 the old `level` value disappears at the fan's next report; if Alexa or Google
 Home still show a fan as a dimmer, remove and re-add it there.
 
-If a device isn't mapped yet or shows the wrong thing, press **Log raw Dreo
-data** in the app (under Logging): it writes each device's raw device-list
-entry and full state to **Logs**. Only model data is kept: no owner, home,
-room or device names, MAC or IP addresses, Wi-Fi name, or full serial numbers
-(the last four characters tell devices apart), so the log is safe to paste
-into a forum post.
-
 Only an MD5 hash of the password is stored (that is what Dreo's sign-in
-expects); the password field is cleared once it is hashed. The hash signs in
-to Dreo just like the password would, and it shows on the app's status page
-and in hub backups, so keep those private.
+expects); the password field is cleared once it is hashed. The hash is kept
+in a password-type setting rather than in the app's state, so the app's
+status page shouldn't show it in plain text (still to be confirmed on a hub,
+see [TESTING.md](TESTING.md#the-password-hash-setting)). It signs in to Dreo
+just like the password would and it is in hub backups, so keep those
+private. Installs from 0.2.0 move the hash out of state the next time the
+app's page is opened or **Done** is pressed.
 
 **Choose devices** lists the account's devices each time it opens (at most
 once a minute); **Look again** on that page lists them again straight away,
@@ -205,92 +204,52 @@ attributes.
   same moment can, rarely, overwrite each other; the next report or the
   30-minute refresh corrects it.
 
-## What needs testing
+## Troubleshooting
 
-### Covered locally (no hub needed)
+**Nothing updates or responds.** Open the **Dreo Cloud Connection** device.
+Its `connection` attribute should be `connected`. If it is `disconnected`
+or stuck on `connecting`, press **Reconnect** (or **Initialize**), then check
+**Logs** for its messages. If the device is missing, press **Done** in the
+app to add it back. The app's main page also shows the connection and each
+device's online status, and its **Status** line shows sign-in problems
+(after a rejected password the app waits 30 minutes before trying again;
+entering the password again retries straight away).
 
-`tests/run.sh` compiles the app and every driver with Groovy 2.4 (the version
-Hubitat runs) against small stand-ins for the hub, then runs:
+**One device is wrong or shows `offline`.** Check it in the Dreo app first:
+Dreo Connect only sees what Dreo's cloud reports. **Refresh** on the device
+re-reads it.
 
-- **CompileCheck**: every file compiles and its `definition`/`metadata`/
-  `preferences` code runs; no method shadows a metadata word such as
-  `command`; every method a driver calls on its parent (and the app calls on
-  its child devices) exists and is not private.
-- **MappingTest**: named speeds for 4, 8, 9, 10 and 12 steps; every command's
-  Dreo params (speeds incl. auto and leaving auto, step bounds, cycling, modes,
-  single- and two-axis oscillation, display incl. `lightmode`, panel sound via
-  `voiceon`/`muteon`, child lock, head position and oscillation range with
-  their angle ranges and the 8 s head settle, ceiling light, light ring); the ceiling-fan
-  power gate (cases from hass-dreo's `PyDreoCeilingFan`); temperature with
-  `tempunit` 0/1, the >50 rule, offsets and °F/°C hubs; RGB/hue round-trips;
-  and the events for sample DR-HAF001S, DR-HPF008S (with light ring) and
-  DR-HCF ceiling fan states; humidifier limits from `controlsConf`, events for
-  the DR-HHM001S sample state and its variants (sleep target, paused, empty
-  tank), and every humidifier command's params.
-- **DriverFlowTest**: the app and real drivers together, with state passed
-  through JSON as on a hub: discovery and rooms, **Look again**, child
-  creation and removal, saved head positions,
-  WebSocket open/reports/acks, the one-at-a-time command queue, retries and
-  reconnect after a missing ack, light ring and ceiling light children, the
-  gate on a real command, online/offline, commands held for a device shown
-  offline (sent if a refresh finds it online, dropped if it is still offline,
-  the refresh fails or never answers), every device offline after 2 minutes
-  without the cloud connection or on a rejected sign-in and back on
-  reconnect, REST refresh, the speed-step
-  preference, and a humidifier from discovery through reports and commands.
+**A model isn't mapped, or a value looks wrong.** Press **Log raw Dreo
+data** in the app (under Logging): it writes each device's raw device-list
+entry and full state to **Logs**. Only model data is kept: no owner, home,
+room or device names, MAC or IP addresses, Wi-Fi name, or full serial numbers
+(the last four characters tell devices apart), so the log is safe to paste
+into a forum post.
 
-To run them, get a JDK and Groovy 2.4 once (downloaded into the git-ignored
-`.tools/`; nothing is installed system-wide; or have `java` and `groovy` on
-your PATH), then run the tests:
+**Debug logs.** Turn on **Debug logging** in the app (Logging section), on
+the **Dreo Cloud Connection** device and on the device in question. Each
+turns itself off after 30 minutes. Then repeat what went wrong and open
+**Logs**.
 
-```bash
-tests/setup-tools.sh
-```
+**After updating**, if something breaks quietly, look at the app's Logging
+section: it names any device whose driver comes from another version.
+Re-paste that driver and press **Done**.
 
-```bash
-tests/run.sh
-```
+### Reporting a problem
 
-The stand-ins only model the hub as far as these files use it, so the hub
-itself still needs checking.
+Please include:
 
-### Confirmed on a hub (Hubitat C-8, October 2026)
+- The Dreo Connect version (app page, Logging section) and your hub model
+  and platform version.
+- The device model (for example DR-HPF008S) and what you did, what you
+  expected and what happened.
+- The **Log raw Dreo data** lines for that device.
+- The debug log lines from the app, the cloud connection and the device
+  around the time it happened.
 
-- The app and all drivers save in Apps Code / Drivers Code.
-- Sign-in (North America) with the hashed password, discovery, and device
-  creation for all the author's fans; the humidifier (DR-HHM001S) is
-  discovered and added.
-- DR-HPF008S: pushed updates for power, named speeds and steps, all five
-  modes (Auto shows as speed `auto`), display auto/on/off and temperature in
-  °F; commands sent from Hubitat take effect about as fast as the pushes.
-
-### Still needs a hub
-
-1. The EU region redirect, and the 30-minute back-off after a wrong password.
-2. **Choose devices** page: whether it works before the app's first **Done**.
-3. WebSocket over time: reconnect after a hub reboot (Initialize) or a lost
-   network, and the no-acknowledgement reconnect.
-4. DR-HPF008S: oscillation, panel sound, child lock, and leaving Auto mode by
-   setting a speed; the 1–12 speed dropdown; head position, oscillation range
-   and saved positions (and whether a fixed position needs oscillation off,
-   which the app sends).
-5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): that the real state
-   keys match the samples in the tests, and each fan does what the params say,
-   including `medium` on the 4-step DR-HAF001S. The DR-HTF004S is not in
-   hass-dreo's table, so its speed range is a guess (1–9).
-6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
-   effects.
-7. Ceiling fan (when it arrives): the power gate and light child on the real
-   fan.
-8. Humidifier (DR-HHM001S): the real state keys and `controlsConf` match the
-   hass-dreo samples; target humidity in Auto and Sleep, mist levels 1–6,
-   display, panel sound, ambient light; what `wrong` reports with the tank
-   lifted off.
-9. Offline handling: unplug a fan and plug it back in, then send a command
-   straight away (it should go out once the app has re-read the fan); with
-   the hub's internet cut for over 2 minutes, every Dreo device's
-   `healthStatus` turns `offline`, and back to its real status a few seconds
-   after the connection returns.
+Unlike the raw-data lines, debug logs show full serial numbers and Dreo's
+reports as they arrive, which can include the Wi-Fi name or IP address. Look
+them over and blank those out before posting in public.
 
 ## Credits and licence
 

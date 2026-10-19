@@ -87,4 +87,20 @@ check("every app and driver carries the packageManifest.json version") {
     assert stamped.values().every { it == version }, "run scripts/release.sh: ${stamped} vs ${version}"
 }
 
+// scripts/release.sh writes both from its OWNER setting; this keeps them in step.
+check("importUrl and packageManifest.json name the same files") {
+    Map m = new groovy.json.JsonSlurper().parse(new File(root, "packageManifest.json"))
+    Map locations = (m.apps + m.drivers).collectEntries { [(it.location.replaceFirst(/.*\/(apps|drivers)\//, '$1/')): it.location] }
+    List paths = files.collect { root.toPath().relativize(it.toPath()).toString() }
+    assert locations.keySet() == paths as Set, "manifest ${locations.keySet()} vs files ${paths}"
+    String base = m.licenseFile.replaceFirst(/LICENSE$/, "")
+    assert locations.values().every { it.startsWith(base) }, "manifest links name different repositories"
+    files.each { File f ->
+        def u = (f.text =~ /importUrl: "([^"]*)"/)
+        assert u.find(), "${f.name} has no importUrl"
+        String p = root.toPath().relativize(f.toPath()).toString()
+        assert u.group(1) in ["", locations[p]], "${p}: importUrl ${u.group(1)} vs manifest ${locations[p]}"
+    }
+}
+
 Check.finish()

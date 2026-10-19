@@ -194,14 +194,14 @@ def mainPage() {
     dynamicPage(name: "mainPage", title: "Dreo Connect", install: true, uninstall: true) {
         section("Dreo account") {
             input "email", "email", title: "Email", required: true, submitOnChange: true
-            input "password", "password", title: state.passwordHash ? "Password (saved; enter again to change)" : "Password",
+            input "password", "password", title: passwordHash() ? "Password (saved; enter again to change)" : "Password",
                 required: false, submitOnChange: true
-            paragraph "Only an MD5 hash of the password is kept, which is what Dreo's sign-in expects. " +
-                "The hash signs in to Dreo just like the password, and it shows on this app's status page " +
-                "and in hub backups, so keep those private."
+            paragraph "Only an MD5 hash of the password is kept, which is what Dreo's sign-in expects, in a " +
+                "password-type setting. The hash signs in to Dreo just like the password and is in hub " +
+                "backups, so keep those private."
             if (state.status) paragraph "<b>Status:</b> ${state.status}"
         }
-        if (settings.email && state.passwordHash) {
+        if (settings.email && passwordHash()) {
             section("Devices") {
                 href "fansPage", title: "Choose devices", description: selectedSummary()
                 getFanDevices().each { cd ->
@@ -221,7 +221,7 @@ def mainPage() {
         section("Logging") {
             input "logEnable", "bool", title: "Debug logging (turns itself off after 30 minutes)", defaultValue: false
             paragraph "Dreo Connect version ${VERSION}${driverVersionNote()}"
-            if (settings.email && state.passwordHash) {
+            if (settings.email && passwordHash()) {
                 input name: "dumpRaw", type: "button", title: "Log raw Dreo data"
                 paragraph "Writes each device's raw Dreo device-list entry and full state to Logs, for reporting a model that isn't mapped yet."
             }
@@ -282,14 +282,34 @@ private void hashPasswordSetting() {
         state.remove("authFailedAt")
         state.remove("discoveredAt")
     }
+    // Before 0.3.0 the hash lived in state, which the app's status page shows as is.
+    if (state.passwordHash) {
+        if (settings.passwordMd5 == state.passwordHash) state.remove("passwordHash")
+        else savePasswordHash(state.passwordHash as String)
+    }
     if (settings.password) {
-        state.passwordHash = md5(settings.password as String)
+        savePasswordHash(md5(settings.password as String))
         app.removeSetting("password")
         dropToken()
         state.remove("authFailedAt")
         state.remove("discoveredAt")
         state.status = "Password saved"
     }
+}
+
+/**
+ * The hash is kept in a password-type setting, which the hub doesn't show in
+ * plain text. state.passwordHash holds it only until the setting reads back
+ * the same value, and is newer than the setting while it exists.
+ */
+private void savePasswordHash(String h) {
+    app.updateSetting("passwordMd5", [value: h, type: "password"])
+    if (settings.passwordMd5 == h) state.remove("passwordHash")
+    else state.passwordHash = h
+}
+
+private String passwordHash() {
+    (state.passwordHash ?: settings.passwordMd5) as String
 }
 
 private String md5(String s) {
@@ -505,7 +525,7 @@ private String errorText(resp) {
  * already under way wait for that one instead of starting their own.
  */
 private void login(String then, Map thenData, String region = null, int depth = 0) {
-    if (!settings.email || !state.passwordHash) {
+    if (!settings.email || !passwordHash()) {
         state.status = "Enter your Dreo email and password"
         return
     }
@@ -532,7 +552,7 @@ private void login(String then, Map thenData, String region = null, int depth = 
     Map body = [
         acceptLanguage: "en", client_id: CLIENT_ID, client_secret: CLIENT_SECRET,
         email: settings.email, encrypt: "ciphertext", grant_type: "email-password",
-        himei: HIMEI, password: state.passwordHash, scope: "all",
+        himei: HIMEI, password: passwordHash(), scope: "all",
     ]
     Map params = [
         uri: apiBase(r), path: PATH_LOGIN, query: [timestamp: now()],

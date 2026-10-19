@@ -212,8 +212,12 @@ class FakeApp {
     long id
     HubitatScript script
     String getLabel() { "Dreo Connect" }
-    void removeSetting(String name) { script.settings.remove(name) }
-    void updateSetting(String name, def v) { script.settings[name] = v instanceof Map ? v.value : v }
+    Map settingTypes = [:]
+    void removeSetting(String name) { script.settings.remove(name); settingTypes.remove(name) }
+    void updateSetting(String name, def v) {
+        script.settings[name] = v instanceof Map ? v.value : v
+        if (v instanceof Map && v.type) settingTypes[name] = v.type
+    }
 }
 
 /** Calls into another script, allowing only its public methods. */

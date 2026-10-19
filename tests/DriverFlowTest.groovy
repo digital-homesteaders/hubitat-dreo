@@ -32,7 +32,7 @@ void ack(String sn) { ws([devicesn: sn, method: "control-reply", reported: [:]])
 check("discovery lists fans, skips other devices, adds rooms") {
     app.settings.email = "me@example.com"
     app.state.emailUsed = "me@example.com"  // as after the main page
-    app.state.passwordHash = "x"
+    app.settings.passwordMd5 = "x"
     app.state.token = "tok"
     app.discoverDevices([list: [
         [deviceId: "1", sn: "SN1", model: "DR-HPF008S", deviceName: "Office Fan", seriesName: "PolyFan 508S"],
@@ -764,6 +764,30 @@ check("unticking a fan removes it") {
     hub.settle()
     assert child("dreo-SN2") == null
     assert conn().driver.state.wanted == false
+}
+
+check("the password hash is kept in a password-type setting, not in state") {
+    String h = "5ebe2294ecd0e0f08eab7690d2a6ee69"  // MD5 of "secret"
+    app.settings.password = "secret"
+    app.mainPage()
+    hub.settle()
+    assert app.settings.passwordMd5 == h && !app.settings.password
+    assert app.app.settingTypes.passwordMd5 == "password"
+    assert !JsonOutput.toJson(app.state).contains(h)
+}
+
+check("a hash left in state by 0.2 moves to the setting") {
+    app.app.removeSetting("passwordMd5")
+    app.state.passwordHash = "oldhash"
+    hub.settle()
+    app.updated()
+    hub.settle()
+    assert app.settings.passwordMd5 == "oldhash" && app.app.settingTypes.passwordMd5 == "password"
+    assert !app.state.containsKey("passwordHash")
+    app.finishLogin()
+    app.state.remove("authFailedAt")
+    app.login(null, [:])
+    assert app.callsNamed("asynchttpPost").last()[2].body.password == "oldhash"
 }
 
 Check.finish()
