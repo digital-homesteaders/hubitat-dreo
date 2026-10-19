@@ -73,6 +73,9 @@ itself still needs checking.
 - DR-HPF008S: pushed updates for power, named speeds and steps, all five
   modes (Auto shows as speed `auto`), display auto/on/off and temperature in
   °F; commands sent from Hubitat take effect about as fast as the pushes.
+- DR-HTF004S (unreleased code, 2026-10-18): after re-pasting the app and
+  pressing **Done**, speeds 11 and 12 from Hubitat change the fan's speed
+  (its 1–12 range comes from its device list).
 
 ## Still needs a hub
 
@@ -86,11 +89,9 @@ itself still needs checking.
    which the app sends).
 5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): their real state
    and device lists are now in the tests, so what remains is that each fan does
-   what the params say, including `medium` on the 4-step DR-HAF001S, speeds
-   10–12 on the DR-HTF004S (1–12 from its device list; set in the Dreo app
-   they read back correctly, but from Hubitat they were capped at 9 until
-   **Done** re-read the device list) and turbo/custom on the DR-HPF004S (from
-   its schedule, not its mode buttons).
+   what the params say, including `medium` on the 4-step DR-HAF001S, the
+   DR-HTF004S's other commands (its speeds 11–12 are confirmed above), and
+   turbo/custom on the DR-HPF004S (from its schedule, not its mode buttons).
 6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
    effects.
 7. Ceiling fan (when it arrives): the power gate and light child on the real
