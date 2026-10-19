@@ -355,6 +355,10 @@ void initialize() {
     if (getFanDevices()) {
         runEvery30Minutes("pollAll")
         connectSocket()
+        // Re-read the device list so devices pick up speed ranges, modes and
+        // humidifier limits from Dreo (e.g. after pasting a newer app) without
+        // a visit to Choose devices.
+        if (!state.discovering) startDiscovery()
     } else {
         getConnection()?.disconnect()
     }
@@ -378,11 +382,8 @@ private void syncChildren() {
             log.error "Dreo: could not add ${f.name}: ${e.message} (is the '${driver}' driver installed?)"
         }
     }
+    applyLimits(found)
     getFanDevices().each { cd ->
-        // Limits read at discovery (speed range, modes, humidifier ranges) also reach devices added earlier.
-        (found[cd.getDataValue("sn")]?.limits ?: [:]).each { k, v ->
-            if (cd.getDataValue(k) != v) cd.updateDataValue(k, v)
-        }
         if (!(cd.getDataValue("sn") in selected)) {
             log.info "Dreo: removing ${cd.displayName}"
             deleteChildDevice(cd.deviceNetworkId)
@@ -394,6 +395,22 @@ private void syncChildren() {
         } catch (e) {
             log.error "Dreo: could not add the cloud connection device: ${e.message} (is the 'Dreo Cloud Connection' driver installed?)"
         }
+    }
+}
+
+/** Limits read at discovery (speed range, modes, humidifier ranges) also reach devices added earlier. */
+private void applyLimits(Map found) {
+    getFanDevices().each { cd ->
+        Map limits = found[cd.getDataValue("sn")]?.limits ?: [:]
+        boolean changed = false
+        limits.each { k, v ->
+            if (cd.getDataValue(k) != v) {
+                cd.updateDataValue(k, v)
+                changed = true
+            }
+        }
+        // Show the new range or modes now rather than at the fan's next report.
+        if (changed) refreshFan(cd.getDataValue("sn"))
     }
 }
 
@@ -658,6 +675,7 @@ def discoverDevices(data, Map ctx) {
     }
     state.discovered = found
     state.unsupported = unsupported
+    applyLimits(found)
     apiGet(PATH_ROOMS, [pageNo: 1, pageSize: 50], "discoverRooms")
 }
 

@@ -143,4 +143,59 @@ new File(root, "tests/fixtures").eachFileRecurse { File f ->
     }
 }
 
+check("digital-homesteaders/DR-HTF004S: a device added before 0.3 gets 1-12 on Done, without Choose devices") {
+    Map fx = json(new File(root, "tests/fixtures/digital-homesteaders/DR-HTF004S.json").text)
+    Hub hub = new Hub(root)
+    def app = hub.app()
+    app.settings.email = "me@example.com"
+    app.state.emailUsed = "me@example.com"
+    app.settings.passwordMd5 = "x"
+    app.state.token = "tok"
+    // As 0.2.0 discovered it: no speed range or modes kept.
+    Map entry = fx.device + [deviceId: "1", sn: "FX1", deviceName: "Tower Fan"]
+    app.discoverDevices([list: [entry + [controlsConf: [template: "DR-HTF004S"]]]], [:])
+    app.discoverRooms(null, [:])
+    app.settings.selectedFans = ["FX1"]
+    app.updated()
+    hub.settle()
+    FakeDevice d = app.getChildDevice("dreo-FX1")
+    FakeDevice conn = app.getChildDevice("dreo-connection-${app.app.id}")
+    conn.webSocketStatus("status: open")
+    hub.settle()
+    app.fanStateDone(restState(fx.state + [windlevel: 5]), [sn: "FX1"])
+    hub.settle()
+    assert !d.getDataValue("speedRange") && d.currentValue("maxSpeedLevel") == 9
+    Closure lastSpeed = {
+        conn.driver.callsNamed("ws.send").collect { it[1] }.findAll { it != "2" }.collect { json(it) }
+            .findAll { it.method == "control" && it.params.windlevel != null }.last().params.windlevel
+    }
+    d.setSpeedLevel("12")
+    hub.settle()
+    assert lastSpeed() == 9                // the bug seen on the hub: 12 capped at the 1-9 fallback
+    conn.parse(JsonOutput.toJson([devicesn: "FX1", method: "control-reply", reported: [:]]))
+    hub.settle()
+
+    // Re-paste the app, press Done: it reads the device list again by itself.
+    app.state.remove("discovering")
+    int gets = app.callsNamed("asynchttpGet").size()
+    app.updated()
+    hub.settle()
+    assert app.callsNamed("asynchttpGet").drop(gets).any { it[3]?.cb == "discoverDevices" }
+    app.discoverDevices([list: [entry]], [:])
+    hub.settle()
+    assert d.getDataValue("speedRange") == "1-12" && d.getDataValue("modes") == "normal=1,natural=2,sleep=3,auto=4"
+    // ...and re-reads the fan so the new range shows straight away.
+    assert app.callsNamed("asynchttpGet").drop(gets).any { it[3]?.cb == "fanStateDone" }
+    app.fanStateDone(restState(fx.state + [windlevel: 5]), [sn: "FX1"])
+    hub.settle()
+    assert d.currentValue("maxSpeedLevel") == 12
+    d.setSpeedLevel("12")
+    hub.settle()
+    assert lastSpeed() == 12
+    d.setSpeedLevel("11")
+    conn.parse(JsonOutput.toJson([devicesn: "FX1", method: "control-reply", reported: [:]]))
+    hub.settle()
+    assert lastSpeed() == 11
+}
+
 Check.finish()

@@ -155,8 +155,8 @@ them (the DR-HPF004S has both). The DR-HTF007S always uses the table
 
 If a speed range is still wrong, set **Number of speed steps** in the fan's
 preferences. A fan reporting a higher step than expected also widens the range
-by itself. After a Dreo app update, **Choose devices** then **Done** reads the
-device list again.
+by itself. Each **Done** in the app reads the device list again, so a newer
+range (after a Dreo update, or a newer Dreo Connect) reaches existing devices.
 
 ### Dreo Ceiling Fan
 

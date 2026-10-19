@@ -87,8 +87,10 @@ itself still needs checking.
 5. The other fans (DR-HAF001S, DR-HTF004S, 2× DR-HPF004S): their real state
    and device lists are now in the tests, so what remains is that each fan does
    what the params say, including `medium` on the 4-step DR-HAF001S, speeds
-   10–12 on the DR-HTF004S (1–12 from its device list) and turbo/custom on the
-   DR-HPF004S (from its schedule, not its mode buttons).
+   10–12 on the DR-HTF004S (1–12 from its device list; set in the Dreo app
+   they read back correctly, but from Hubitat they were capped at 9 until
+   **Done** re-read the device list) and turbo/custom on the DR-HPF004S (from
+   its schedule, not its mode buttons).
 6. Light ring on the DR-HPF008S on real hardware: brightness steps, colours,
    effects.
 7. Ceiling fan (when it arrives): the power gate and light child on the real
