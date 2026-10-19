@@ -76,6 +76,8 @@ itself still needs checking.
 - DR-HTF004S (unreleased code, 2026-10-18): after re-pasting the app and
   pressing **Done**, speeds 11 and 12 from Hubitat change the fan's speed
   (its 1–12 range comes from its device list).
+  Normal, natural, sleep and auto work; turbo and custom, which it doesn't
+  have, are refused (warning in **Logs**).
 
 ## Still needs a hub
 
