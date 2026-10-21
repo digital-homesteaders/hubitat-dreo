@@ -92,6 +92,8 @@ itself still needs checking.
     and saved positions.
   - DR-HAF001S, DR-HTF004S and the second DR-HPF004S: their commands do what
     the params say, including `medium` on the 4-step DR-HAF001S.
+  - The app's Status page shows the `passwordMd5` setting masked (`***`),
+    and State shows `region: NA` (North America).
 
 ## Still needs a hub
 
@@ -113,7 +115,8 @@ itself still needs checking.
    the hub's internet cut for over 2 minutes, every Dreo device's
    `healthStatus` turns `offline`, and back to its real status a few seconds
    after the connection returns.
-7. The password hash setting (see below).
+7. The password hash setting (see below): masking is confirmed; still to
+   check are the 0.2.0 upgrade, a hub reboot and re-entering the password.
 
 ### The password hash setting
 
