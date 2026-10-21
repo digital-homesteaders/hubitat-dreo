@@ -83,6 +83,15 @@ itself still needs checking.
   (its 1–12 range comes from its device list).
   Normal, natural, sleep and auto work; turbo and custom, which it doesn't
   have, are refused (warning in **Logs**).
+- 2026-10-21, the author's checks of the then-unreleased code (reported as
+  done, with no problems):
+  - DR-HPF008S: light ring brightness, colours and effects, turbo, and
+    power through its `fanon` key.
+  - DR-HPF004S: oscillation, panel sound, child lock, leaving Auto by
+    setting a speed, the 1–12 speed dropdown, head position, oscillation range
+    and saved positions.
+  - DR-HAF001S, DR-HTF004S and the second DR-HPF004S: their commands do what
+    the params say, including `medium` on the 4-step DR-HAF001S.
 
 ## Still needs a hub
 
@@ -90,32 +99,21 @@ itself still needs checking.
 2. **Choose devices** page: whether it works before the app's first **Done**.
 3. WebSocket over time: reconnect after a hub reboot (Initialize) or a lost
    network, and the no-acknowledgement reconnect.
-4. DR-HPF004S: oscillation, panel sound, child lock, and leaving Auto mode by
-   setting a speed; the 1–12 speed dropdown; head position, oscillation range
-   and saved positions (and whether a fixed position needs oscillation off,
-   which the app sends).
-5. The other fans (DR-HPF008S, DR-HAF001S, DR-HTF004S, the second DR-HPF004S):
-   their real state and device lists are now in the tests, so what remains is
-   that each fan does what the params say, including turbo and the `fanon`
-   power key on the DR-HPF008S, `medium` on the 4-step DR-HAF001S, and the
-   DR-HTF004S's other commands (its speeds 11–12 are confirmed above).
-6. Light ring on a DR-HPF008S on real hardware: brightness steps, colours,
-   effects.
-7. Ceiling fan (when it arrives): the power gate and light child on the real
+4. Ceiling fan (when it arrives): the power gate and light child on the real
    fan.
-8. Humidifier (DR-HHM001S): its commands work (see above), and its real state
+5. Humidifier (DR-HHM001S): its commands work (see above), and its real state
    and device list are in the tests (target range 30–90 %; its
    `connected: false` that day was right: it was unplugged, and the app showed
    it offline). Left open (the author's test unit has gone back to its
    owner; reports from other owners welcome): what `wrong` reports with the
    tank lifted off, and targets above 80 % (the range the device list gives
    newer firmware).
-9. Offline handling: unplug a fan and plug it back in, then send a command
+6. Offline handling: unplug a fan and plug it back in, then send a command
    straight away (it should go out once the app has re-read the fan); with
    the hub's internet cut for over 2 minutes, every Dreo device's
    `healthStatus` turns `offline`, and back to its real status a few seconds
    after the connection returns.
-10. The password hash setting (see below).
+7. The password hash setting (see below).
 
 ### The password hash setting
 
