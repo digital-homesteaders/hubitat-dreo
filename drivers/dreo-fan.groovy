@@ -21,7 +21,7 @@ import groovy.transform.Field
 @Field static final String DRIVER_VERSION = "0.2.0"
 
 metadata {
-    definition(name: "Dreo Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
+    definition(name: "Dreo Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-fan.groovy") {
         capability "Actuator"
         capability "Switch"
         capability "FanControl"

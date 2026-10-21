@@ -31,7 +31,7 @@ definition(
     singleInstance: true,
     iconUrl: "",
     iconX2Url: "",
-    importUrl: ""
+    importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/apps/dreo-connect.groovy"
 )
 
 preferences {

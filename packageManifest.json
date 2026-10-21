@@ -4,15 +4,15 @@
   "version": "0.2.0",
   "minimumHEVersion": "2.3.0",
   "dateReleased": "2026-10-18",
-  "documentationLink": "https://github.com/GITHUB_OWNER/hubitat-dreo#readme",
-  "licenseFile": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/LICENSE",
+  "documentationLink": "https://github.com/digital-homesteaders/hubitat-dreo#readme",
+  "licenseFile": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/LICENSE",
   "releaseNotes": "Humidifiers (DR-HHM), fan head position and saved positions, 1-12 speed dropdown, version check, private keys kept out of device state.",
   "apps": [
     {
       "id": "fd84052a-2c44-4198-bb0f-3fc2309386ee",
       "name": "Dreo Connect",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/apps/dreo-connect.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/apps/dreo-connect.groovy",
       "required": true,
       "oauth": false,
       "primary": true
@@ -23,42 +23,42 @@
       "id": "55dff51a-ef29-4756-82bd-9c48b8202748",
       "name": "Dreo Cloud Connection",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-cloud-connection.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-cloud-connection.groovy",
       "required": true
     },
     {
       "id": "b10a60ed-46c5-4f95-89e3-5e730aa063b9",
       "name": "Dreo Fan",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-fan.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-fan.groovy",
       "required": true
     },
     {
       "id": "8a58aa03-1ade-4bf4-ac63-4cf7f0dc4e71",
       "name": "Dreo Ceiling Fan",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-ceiling-fan.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-fan.groovy",
       "required": true
     },
     {
       "id": "edfd16b0-a13a-48a8-9ed3-a743d437377e",
       "name": "Dreo Ceiling Light",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-ceiling-light.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-light.groovy",
       "required": true
     },
     {
       "id": "ceb9c117-dd8c-4113-b170-152283ae46d7",
       "name": "Dreo Light Ring",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-light-ring.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-light-ring.groovy",
       "required": true
     },
     {
       "id": "90505aa0-5ffc-4da8-829c-0158e31129bd",
       "name": "Dreo Humidifier",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/GITHUB_OWNER/hubitat-dreo/main/drivers/dreo-humidifier.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-humidifier.groovy",
       "required": true
     }
   ]

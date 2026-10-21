@@ -12,7 +12,7 @@ import groovy.transform.Field
 @Field static final String DRIVER_VERSION = "0.2.0"
 
 metadata {
-    definition(name: "Dreo Ceiling Light", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
+    definition(name: "Dreo Ceiling Light", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-light.groovy") {
         capability "Actuator"
         capability "Light"
         capability "Switch"

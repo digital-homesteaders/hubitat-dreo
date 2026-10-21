@@ -8,7 +8,7 @@ set -eu
 
 # The GitHub user or organization that will host the repository. While it is
 # GITHUB_OWNER, importUrl stays empty and the manifest keeps the placeholder.
-OWNER=GITHUB_OWNER
+OWNER=digital-homesteaders
 REPO=hubitat-dreo
 BRANCH=main
 

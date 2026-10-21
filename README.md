@@ -59,9 +59,11 @@ versions go in the device's `firmware` data value.
 
 ### Hubitat Package Manager
 
-Not published yet. Once the repository is on GitHub, setting `OWNER` in
-`scripts/release.sh` and running it fills in the manifest's links and every
-file's `importUrl` (so each code page's **Import** button works too).
+In **Hubitat Package Manager**, choose **Install → From a URL** and paste:
+
+```
+https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/packageManifest.json
+```
 
 ### Manually
 

@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
 @Field static final String DRIVER_VERSION = "0.2.0"
 
 metadata {
-    definition(name: "Dreo Cloud Connection", namespace: "dreo", author: "Digital Homesteaders", importUrl: "") {
+    definition(name: "Dreo Cloud Connection", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-cloud-connection.groovy") {
         capability "Initialize"
         attribute "connection", "enum", ["connecting", "connected", "disconnected"]
         command "reconnect"
