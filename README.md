@@ -275,5 +275,5 @@ MIT License, Copyright (c) 2026 Digital Homesteaders; see [LICENSE](LICENSE).
 
 The Dreo protocol, model data and feature mappings are ported from
 [hass-dreo](https://github.com/JeffSteinbok/hass-dreo) by Jeff Steinbok and
-contributors (MIT License; notice included in LICENSE). Not affiliated with
+contributors (MIT License; notice in [NOTICE](NOTICE)). Not affiliated with
 or endorsed by Dreo.

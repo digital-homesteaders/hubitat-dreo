@@ -12,7 +12,7 @@
  * fan, humidifier and light drivers stay thin.
  *
  * Protocol, model data and feature mappings are ported from hass-dreo
- * (https://github.com/JeffSteinbok/hass-dreo, MIT License; see LICENSE).
+ * (https://github.com/JeffSteinbok/hass-dreo, MIT License; see NOTICE).
  *
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */

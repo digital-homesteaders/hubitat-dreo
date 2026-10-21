@@ -8,7 +8,7 @@
  * device that are still waiting merge into one (the newest value of each key).
  *
  * Protocol ported from hass-dreo (https://github.com/JeffSteinbok/hass-dreo,
- * MIT License; see LICENSE).
+ * MIT License; see NOTICE).
  *
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */
