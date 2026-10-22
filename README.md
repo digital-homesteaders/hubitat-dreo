@@ -57,6 +57,24 @@ versions go in the device's `firmware` data value.
 
 ## Install
 
+The **Dreo Connect** app and the **Dreo Cloud Connection** driver are always
+needed. Pick the other drivers by the devices you have (the model number is
+on the device's label and in the Dreo app under the device's settings):
+
+| If you have | Install these drivers |
+| --- | --- |
+| Tower fans (DR-HTF…), air circulators (DR-HAF…), pedestal fans (DR-HPF…) | Dreo Fan |
+| DR-HPF008S (pedestal fan with a light ring) | Dreo Fan **and** Dreo Light Ring |
+| Ceiling fans (DR-HCF…) | Dreo Ceiling Fan **and** Dreo Ceiling Light |
+| DR-HCF002S, DR-HCF007S, DR-HCF008S, DR-HCF010S (ceiling fans with a light ring) | Dreo Ceiling Fan, Dreo Ceiling Light **and** Dreo Light Ring |
+| Humidifiers (DR-HHM…) | Dreo Humidifier |
+
+If unsure, install them all: an unused driver does nothing. Another fan with
+a light ring creates a Dreo Light Ring device too, so add that driver if a fan
+not listed above has one. **Choose devices** in the app lists the drivers the
+ticked devices need, and the app's main page names any device it couldn't add
+because its driver is missing.
+
 ### Hubitat Package Manager
 
 In **Hubitat Package Manager**, choose **Install → From a URL** and paste:
@@ -65,18 +83,23 @@ In **Hubitat Package Manager**, choose **Install → From a URL** and paste:
 https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/packageManifest.json
 ```
 
+When it asks which optional parts to install, tick the drivers from the table
+above. To add one later (a new device, or a driver missed out), use
+**Modify a Package** → Dreo Connect.
+
 ### Manually
 
-1. **Drivers Code → New Driver**: paste and save each file in `drivers/`:
-   `dreo-cloud-connection.groovy`, `dreo-fan.groovy`,
-   `dreo-ceiling-fan.groovy`, `dreo-ceiling-light.groovy`,
-   `dreo-light-ring.groovy`, `dreo-humidifier.groovy`.
+1. **Drivers Code → New Driver**: paste and save
+   `drivers/dreo-cloud-connection.groovy`, then the drivers from the table
+   above: `dreo-fan.groovy`, `dreo-ceiling-fan.groovy`,
+   `dreo-ceiling-light.groovy`, `dreo-light-ring.groovy`,
+   `dreo-humidifier.groovy`.
 2. **Apps Code → New App**: paste and save `apps/dreo-connect.groovy`.
 3. **Apps → Add User App → Dreo Connect**. Enter your Dreo email and
    password, open **Choose devices**, tick the fans and humidifiers you want,
-   then press **Done**.
+   check the drivers it lists are installed, then press **Done**.
 
-**Updating:** re-paste the app and every driver from the same version, then
+**Updating:** re-paste the app and every driver you installed, from the same version, then
 press **Done** in the app. The app's Logging section shows its version and
 names any device whose driver comes from another version (each device's Data
 shows its `driverVersion`). Debug logging, in the app and on each device,

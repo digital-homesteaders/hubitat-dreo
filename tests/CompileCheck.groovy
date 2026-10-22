@@ -103,4 +103,12 @@ check("importUrl and packageManifest.json name the same files") {
     }
 }
 
+// HPM installs only the app and the cloud connection; users pick the device drivers they need.
+check("packageManifest.json: only the app and the cloud connection are required") {
+    Map m = new groovy.json.JsonSlurper().parse(new File(root, "packageManifest.json"))
+    assert m.apps.every { it.required }
+    assert m.drivers.findAll { it.required }*.name == ["Dreo Cloud Connection"]
+    assert m.drivers.every { it.required instanceof Boolean }
+}
+
 Check.finish()

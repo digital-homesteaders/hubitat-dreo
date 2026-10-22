@@ -14,7 +14,8 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   `command`; every method a driver calls on its parent (and the app calls on
   its child devices) exists and is not private; the version is the same in
   every file and the manifest; each `importUrl` is empty or matches the
-  manifest's link for that file.
+  manifest's link for that file; only the app and the cloud connection are
+  required in the manifest.
 - **MappingTest**: named speeds for 4, 8, 9, 10 and 12 steps; every command's
   Dreo params (speeds incl. auto and leaving auto, step bounds, cycling, modes,
   single- and two-axis oscillation, display incl. `lightmode`, panel sound via
@@ -38,7 +39,9 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   reconnect, REST refresh, the speed-step
   preference, a humidifier from discovery through reports and commands, and
   the password hash: written as a password-type setting, never left in state,
-  and moved there from a 0.2 install's state.
+  and moved there from a 0.2 install's state; the drivers **Choose devices**
+  lists for the ticked devices, and a device whose driver is missing named on
+  the main page until the driver is installed.
 - **FixtureTest**: every file in `tests/fixtures/`, a real device-list entry
   and full state in the **Log raw Dreo data** shape, goes through discovery,
   device creation, a REST refresh, the events and every driver and light
@@ -117,6 +120,10 @@ itself still needs checking.
    after the connection returns.
 7. The password hash setting (see below): masking is confirmed; still to
    check are the 0.2.0 upgrade, a hub reboot and re-entering the password.
+8. Optional drivers: Hubitat Package Manager offers the five device drivers
+   as optional on install and under **Modify**; **Choose devices** shows the
+   drivers list as the ticks change; the missing-driver note on the main page
+   with one driver left out.
 
 ### The password hash setting
 

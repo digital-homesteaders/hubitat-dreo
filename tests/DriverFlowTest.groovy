@@ -71,6 +71,15 @@ check("pages render") {
     app.fansPage()
 }
 
+check("Choose devices names the drivers the ticked devices need") {
+    String note = app.driversNote(app.state.discovered, ["SN1", "SN2"])
+    assert note.contains("<b>Dreo Fan</b>: Office Fan")
+    assert note.contains("<b>Dreo Ceiling Fan</b>: Bedroom Fan")
+    assert note.contains("<b>Dreo Ceiling Light</b>: Bedroom Fan")
+    assert note.contains("<b>Dreo Light Ring</b>: Office Fan, Bedroom Fan")
+    assert app.driversNote(app.state.discovered, []) == null
+}
+
 check("Done creates fan devices and the connection, then connects") {
     app.settings.selectedFans = ["SN1", "SN2"]
     app.updated()
@@ -789,6 +798,23 @@ check("a hash left in state by 0.2 moves to the setting") {
     app.state.remove("authFailedAt")
     app.login(null, [:])
     assert app.callsNamed("asynchttpPost").last()[2].body.password == "oldhash"
+}
+
+check("Done notes a device whose driver isn't installed, and clears it once it is") {
+    File saved = hub.driverFiles.remove("Dreo Ceiling Fan")
+    app.settings.selectedFans = ["SN2"]
+    app.updated()
+    hub.settle()
+    assert !child("dreo-SN2")
+    assert app.state.missingDrivers == ["Bedroom Fan needs 'Dreo Ceiling Fan'"]
+    hub.driverFiles["Dreo Ceiling Fan"] = saved
+    app.updated()
+    hub.settle()
+    assert child("dreo-SN2") && !app.state.missingDrivers
+    app.settings.selectedFans = []
+    app.updated()
+    hub.settle()
+    assert !child("dreo-SN2")
 }
 
 Check.finish()

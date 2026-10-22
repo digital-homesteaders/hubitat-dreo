@@ -157,7 +157,7 @@ preferences {
     "DR-HPF022S": [speed: [1, 9], modes: "turbo", h: [-60, 60], v: [-30, 90]],
     "DR-HPF025S": [speed: [1, 9], modes: "swapped", h: [-60, 60], v: [-30, 90]],
     "DR-HCF001S": [speed: [1, 12]],
-    "DR-HCF002S": [speed: [1, 12]],
+    "DR-HCF002S": [speed: [1, 12], ring: [1, 5]],
     "DR-HCF007S": [speed: [1, 12], ring: [1, 100]],
     "DR-HCF008S": [speed: [1, 12], ring: [1, 100]],
     "DR-HCF010S": [speed: [1, 12], ring: [1, 100]],
@@ -218,6 +218,10 @@ def mainPage() {
         if (settings.email && passwordHash()) {
             section("Devices") {
                 href "fansPage", title: "Choose devices", description: selectedSummary()
+                if (state.missingDrivers) {
+                    paragraph "<b>Not added, driver missing:</b> ${state.missingDrivers.join('; ')}. Install " +
+                        "it (Hubitat Package Manager's Modify, or paste it into Drivers Code), then press Done."
+                }
                 getFanDevices().each { cd ->
                     def what = cd.getDataValue("kind") == "humidifier"
                         ? "${cd.currentValue('humidity') ?: '?'} % humidity" : cd.currentValue('speed') ?: '?'
@@ -269,8 +273,11 @@ def fansPage() {
                 Map options = found.collectEntries { sn, f ->
                     [(sn): "${f.name} (${f.series ?: f.model}${f.room ? ', ' + f.room : ''})"]
                 }.sort { it.value }
-                input "selectedFans", "enum", title: "Fans and humidifiers to add to Hubitat", options: options, multiple: true, required: false
+                input "selectedFans", "enum", title: "Fans and humidifiers to add to Hubitat", options: options,
+                    multiple: true, required: false, submitOnChange: true
                 paragraph "Devices you untick are removed from Hubitat when you press Done."
+                String needed = driversNote(found, settings.selectedFans ?: [])
+                if (needed) paragraph needed
             } else if (!started && !state.discoverError) {
                 paragraph "No fans or humidifiers found on this Dreo account."
             }
@@ -281,6 +288,19 @@ def fansPage() {
             }
         }
     }
+}
+
+/** Which optional drivers the selected devices use, so a missing one is installed before Done. */
+private String driversNote(Map found, List selected) {
+    Map uses = [:]
+    selected.each { String sn ->
+        Map f = found[sn]
+        if (f) driversFor(f.model as String).each { String d -> uses.get(d, []) << f.name }
+    }
+    if (!uses) return null
+    String list = uses.collect { d, names -> "<li><b>${d}</b>: ${names.join(', ')}</li>" }.join("")
+    return "These devices need these drivers (install them with Hubitat Package Manager's " +
+        "<b>Modify</b>, or paste them into Drivers Code):<ul>${list}</ul>"
 }
 
 private String selectedSummary() {
@@ -367,21 +387,24 @@ void initialize() {
 private void syncChildren() {
     List selected = settings.selectedFans ?: []
     Map found = state.discovered ?: [:]
+    List missing = []
     selected.each { String sn ->
         if (getChildDevice(fanDni(sn))) return
         Map f = found[sn]
         if (!f) return
         String kind = kindOf(f.model)
-        String driver = kind == "ceiling" ? "Dreo Ceiling Fan" : kind == "humidifier" ? "Dreo Humidifier" : "Dreo Fan"
+        String driver = driversFor(f.model as String)[0]
         try {
             // Data values go in with the device: its installed() runs inside addChildDevice.
             addChildDevice("dreo", driver, fanDni(sn), [name: f.series ?: f.model, label: f.name, isComponent: false,
                 data: [sn: sn, model: f.model, kind: kind] + (f.limits ?: [:])])
             log.info "Dreo: added ${f.name} (${f.model})"
         } catch (e) {
+            missing << "${f.name} needs '${driver}'".toString()
             log.error "Dreo: could not add ${f.name}: ${e.message} (is the '${driver}' driver installed?)"
         }
     }
+    state.missingDrivers = missing
     applyLimits(found)
     getFanDevices().each { cd ->
         if (!(cd.getDataValue("sn") in selected)) {
@@ -1080,6 +1103,19 @@ def flushHead(Map data) {
 private String kindOf(String model) {
     String prefix = FAMILIES.keySet().find { model?.startsWith(it) }
     return prefix ? FAMILIES[prefix].kind : null
+}
+
+/**
+ * The drivers a model's devices use: the device's own driver first, then the
+ * light children it may create (a ceiling fan's light, a light ring).
+ */
+private List driversFor(String model) {
+    String kind = kindOf(model)
+    if (!kind) return []
+    List d = [kind == "ceiling" ? "Dreo Ceiling Fan" : kind == "humidifier" ? "Dreo Humidifier" : "Dreo Fan"]
+    if (kind == "ceiling") d << "Dreo Ceiling Light"
+    if (MODELS[model]?.ring) d << "Dreo Light Ring"
+    return d
 }
 
 /** A fan device's profile, with the speed range and modes read from its controlsConf at discovery. */

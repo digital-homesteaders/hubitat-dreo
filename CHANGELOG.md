@@ -5,6 +5,12 @@ and every driver, then press **Done** in the app.
 
 ## Unreleased
 
+- **Pick the drivers you need.** In Hubitat Package Manager only the app and
+  the Dreo Cloud Connection driver are required; the fan, ceiling fan,
+  ceiling light, light ring and humidifier drivers are optional. The README
+  has a table of which models need which drivers, **Choose devices** lists the
+  drivers the ticked devices use, and the app's main page names any device it
+  couldn't add because its driver is missing.
 - The Dreo password hash moves from the app's state to a password-type
   setting, so the app's status page doesn't show it in plain text. Existing
   installs move it the next time the app's page is opened or **Done** is

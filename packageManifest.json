@@ -31,35 +31,35 @@
       "name": "Dreo Fan",
       "namespace": "dreo",
       "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-fan.groovy",
-      "required": true
+      "required": false
     },
     {
       "id": "8a58aa03-1ade-4bf4-ac63-4cf7f0dc4e71",
       "name": "Dreo Ceiling Fan",
       "namespace": "dreo",
       "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-fan.groovy",
-      "required": true
+      "required": false
     },
     {
       "id": "edfd16b0-a13a-48a8-9ed3-a743d437377e",
       "name": "Dreo Ceiling Light",
       "namespace": "dreo",
       "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-light.groovy",
-      "required": true
+      "required": false
     },
     {
       "id": "ceb9c117-dd8c-4113-b170-152283ae46d7",
       "name": "Dreo Light Ring",
       "namespace": "dreo",
       "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-light-ring.groovy",
-      "required": true
+      "required": false
     },
     {
       "id": "90505aa0-5ffc-4da8-829c-0158e31129bd",
       "name": "Dreo Humidifier",
       "namespace": "dreo",
       "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-humidifier.groovy",
-      "required": true
+      "required": false
     }
   ]
 }
