@@ -3,7 +3,7 @@
  *
  * The device keeps the fan's merged Dreo state; the app turns it into events
  * and turns commands into Dreo control params (see apps/dreo-connect.groovy).
- * Fans with a light ring (e.g. DR-HPF008S) get a "Dreo Light Ring" child.
+ * Fans with a light ring (e.g. DR-HPF008S) get a "Dreo Fan Light Ring" child.
  * Saved head positions are kept on this device (Dreo's cloud has no list of them).
  *
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
@@ -211,11 +211,14 @@ private void childEvent(Map e) {
     String kind = e.child
     String dni = "${device.deviceNetworkId}-${kind}"
     def cd = getChildDevice(dni)
+    if (cd && cd.name == "Dreo Light Ring") {
+        try { cd.setName("Dreo Fan Light Ring") } catch (ignored) { }   // named before 0.3
+    }
     if (!cd) {
         try {
-            cd = addChildDevice("dreo", "Dreo Light Ring", dni, [name: "Dreo Light Ring", label: "${device.displayName} Light Ring", isComponent: true])
+            cd = addChildDevice("dreo", "Dreo Fan Light Ring", dni, [name: "Dreo Fan Light Ring", label: "${device.displayName} Light Ring", isComponent: true])
         } catch (ex) {
-            log.error "Could not add the light ring device: ${ex.message} (is the 'Dreo Light Ring' driver installed?)"
+            log.error "Could not add the light ring device: ${ex.message} (is the 'Dreo Fan Light Ring' driver installed?)"
             return
         }
     }

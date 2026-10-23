@@ -42,16 +42,16 @@
     },
     {
       "id": "edfd16b0-a13a-48a8-9ed3-a743d437377e",
-      "name": "Dreo Ceiling Light",
+      "name": "Dreo Ceiling Fan Light",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-light.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-fan-light.groovy",
       "required": false
     },
     {
       "id": "ceb9c117-dd8c-4113-b170-152283ae46d7",
-      "name": "Dreo Light Ring",
+      "name": "Dreo Fan Light Ring",
       "namespace": "dreo",
-      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-light-ring.groovy",
+      "location": "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-fan-light-ring.groovy",
       "required": false
     },
     {

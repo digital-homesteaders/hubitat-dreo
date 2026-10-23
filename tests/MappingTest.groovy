@@ -855,10 +855,10 @@ check("dreoEvents use the device's controlsConf data values") {
 check("driversFor: each model's own driver first, then the light children it may create") {
     assert app.driversFor("DR-HTF004S") == ["Dreo Fan"]
     assert app.driversFor("DR-HPF004S") == ["Dreo Fan"]
-    assert app.driversFor("DR-HPF008S") == ["Dreo Fan", "Dreo Light Ring"]
-    assert app.driversFor("DR-HCF001S") == ["Dreo Ceiling Fan", "Dreo Ceiling Light"]
+    assert app.driversFor("DR-HPF008S") == ["Dreo Fan", "Dreo Fan Light Ring"]
+    assert app.driversFor("DR-HCF001S") == ["Dreo Ceiling Fan", "Dreo Ceiling Fan Light"]
     ["DR-HCF002S", "DR-HCF007S", "DR-HCF008S", "DR-HCF010S"].each {
-        assert app.driversFor(it) == ["Dreo Ceiling Fan", "Dreo Ceiling Light", "Dreo Light Ring"]
+        assert app.driversFor(it) == ["Dreo Ceiling Fan", "Dreo Ceiling Fan Light", "Dreo Fan Light Ring"]
     }
     assert app.driversFor("DR-HHM001S") == ["Dreo Humidifier"]
     assert app.driversFor("DR-XYZ") == []

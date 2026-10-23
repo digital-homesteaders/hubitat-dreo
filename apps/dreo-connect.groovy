@@ -1113,8 +1113,8 @@ private List driversFor(String model) {
     String kind = kindOf(model)
     if (!kind) return []
     List d = [kind == "ceiling" ? "Dreo Ceiling Fan" : kind == "humidifier" ? "Dreo Humidifier" : "Dreo Fan"]
-    if (kind == "ceiling") d << "Dreo Ceiling Light"
-    if (MODELS[model]?.ring) d << "Dreo Light Ring"
+    if (kind == "ceiling") d << "Dreo Ceiling Fan Light"
+    if (MODELS[model]?.ring) d << "Dreo Fan Light Ring"
     return d
 }
 

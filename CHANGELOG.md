@@ -5,6 +5,13 @@ and every driver, then press **Done** in the app.
 
 ## Unreleased
 
+- **Clearer child driver names.** *Dreo Light Ring* is now **Dreo Fan Light
+  Ring** and *Dreo Ceiling Light* is now **Dreo Ceiling Fan Light**, so each
+  name says what it belongs to and sorts under its fan (files renamed to
+  match). **Updating by hand:** paste each renamed driver *over its existing
+  entry* in Drivers Code; don't create a new one, or you'll have two. HPM
+  updates the same entries itself. Existing light devices keep working and
+  take the new name on their fan's next update.
 - **No more stray sockets (memory).** The cloud connection now closes any old
   WebSocket before opening a new one, closes a socket that failed, ignores the
   old socket's close notice while connecting, skips a connect while one is

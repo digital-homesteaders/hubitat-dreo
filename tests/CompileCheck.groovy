@@ -38,8 +38,8 @@ Map<String, List<String>> parents = [
     "dreo-ceiling-fan.groovy": ["apps/dreo-connect.groovy"],
     "dreo-humidifier.groovy": ["apps/dreo-connect.groovy"],
     "dreo-cloud-connection.groovy": ["apps/dreo-connect.groovy"],
-    "dreo-light-ring.groovy": ["drivers/dreo-fan.groovy", "drivers/dreo-ceiling-fan.groovy"],
-    "dreo-ceiling-light.groovy": ["drivers/dreo-ceiling-fan.groovy"],
+    "dreo-fan-light-ring.groovy": ["drivers/dreo-fan.groovy", "drivers/dreo-ceiling-fan.groovy"],
+    "dreo-ceiling-fan-light.groovy": ["drivers/dreo-ceiling-fan.groovy"],
 ]
 
 boolean isPublic(Class c, String name) {

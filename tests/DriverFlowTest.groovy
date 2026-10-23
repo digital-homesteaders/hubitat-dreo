@@ -75,8 +75,8 @@ check("Choose devices names the drivers the ticked devices need") {
     String note = app.driversNote(app.state.discovered, ["SN1", "SN2"])
     assert note.contains("<b>Dreo Fan</b>: Office Fan")
     assert note.contains("<b>Dreo Ceiling Fan</b>: Bedroom Fan")
-    assert note.contains("<b>Dreo Ceiling Light</b>: Bedroom Fan")
-    assert note.contains("<b>Dreo Light Ring</b>: Office Fan, Bedroom Fan")
+    assert note.contains("<b>Dreo Ceiling Fan Light</b>: Bedroom Fan")
+    assert note.contains("<b>Dreo Fan Light Ring</b>: Office Fan, Bedroom Fan")
     assert app.driversNote(app.state.discovered, []) == null
 }
 
@@ -116,7 +116,7 @@ check("pushed report updates the fan and creates the light ring child") {
     assert f.currentValue("oscillation") == "horizontal"
     assert f.currentValue("temperature") == 72.0G
     FakeDevice ring = f.driver.getChildDevice("dreo-SN1-ring")
-    assert ring?.driverName == "Dreo Light Ring"
+    assert ring?.driverName == "Dreo Fan Light Ring" && ring.name == "Dreo Fan Light Ring"
     assert ring.currentValue("switch") == "on"
     assert ring.currentValue("level") == 100
     assert ring.currentValue("hue") == 67
@@ -359,7 +359,7 @@ check("ceiling fan: report creates the light child; gate closed shows everything
     FakeDevice f = child("dreo-SN2")
     assert f.currentValue("switch") == "off"
     FakeDevice light = f.driver.getChildDevice("dreo-SN2-light")
-    assert light?.driverName == "Dreo Ceiling Light"
+    assert light?.driverName == "Dreo Ceiling Fan Light"
     assert light.displayName == "Bedroom Fan Light"
     assert light.currentValue("switch") == "off"
     assert light.currentValue("colorTemperature") == 6500
@@ -888,6 +888,17 @@ check("new code with the socket still up: incoming data takes it over instead of
     assert conn().driver.getClass().MEM[conn().idAsLong].phase == "open"
     assert conn().currentValue("connection") == "connected"
     assert conn().driver.callsNamed("ws.send").drop(from)*.getAt(1).contains("2"), "keepalive running again"
+}
+
+check("a light ring created before 0.3 gets today's name on the fan's next update") {
+    app.settings.selectedFans = ["SN1"]
+    app.updated()
+    hub.settle()
+    ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
+    FakeDevice ring = child("dreo-SN1").driver.getChildDevice("dreo-SN1-ring")
+    ring.name = "Dreo Light Ring"                  // as created by 0.2
+    ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
+    assert ring.name == "Dreo Fan Light Ring"
 }
 
 Check.finish()

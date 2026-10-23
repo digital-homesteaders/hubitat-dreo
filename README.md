@@ -25,7 +25,7 @@ rings, and DR-HHM humidifiers.
   nothing updates or responds (pressing **Done** in the app adds it back).
 - **Dreo Fan** (tower fans, air circulators), **Dreo Ceiling Fan** and
   **Dreo Humidifier** devices.
-- **Dreo Ceiling Light** and **Dreo Light Ring** child devices, created
+- **Dreo Ceiling Fan Light** and **Dreo Fan Light Ring** child devices, created
   automatically when a fan reports a light or a light ring, so dashboards,
   Room Lighting and voice assistants see them as ordinary lights.
 
@@ -64,13 +64,13 @@ on the device's label and in the Dreo app under the device's settings):
 | If you have | Install these drivers |
 | --- | --- |
 | Tower fans (DR-HTF…), air circulators (DR-HAF…), pedestal fans (DR-HPF…) | Dreo Fan |
-| DR-HPF008S (pedestal fan with a light ring) | Dreo Fan **and** Dreo Light Ring |
-| Ceiling fans (DR-HCF…) | Dreo Ceiling Fan **and** Dreo Ceiling Light |
-| DR-HCF002S, DR-HCF007S, DR-HCF008S, DR-HCF010S (ceiling fans with a light ring) | Dreo Ceiling Fan, Dreo Ceiling Light **and** Dreo Light Ring |
+| DR-HPF008S (pedestal fan with a light ring) | Dreo Fan **and** Dreo Fan Light Ring |
+| Ceiling fans (DR-HCF…) | Dreo Ceiling Fan **and** Dreo Ceiling Fan Light |
+| DR-HCF002S, DR-HCF007S, DR-HCF008S, DR-HCF010S (ceiling fans with a light ring) | Dreo Ceiling Fan, Dreo Ceiling Fan Light **and** Dreo Fan Light Ring |
 | Humidifiers (DR-HHM…) | Dreo Humidifier |
 
 If unsure, install them all: an unused driver does nothing. Another fan with
-a light ring creates a Dreo Light Ring device too, so add that driver if a fan
+a light ring creates a Dreo Fan Light Ring device too, so add that driver if a fan
 not listed above has one. **Choose devices** in the app lists the drivers the
 ticked devices need, and the app's main page names any device it couldn't add
 because its driver is missing.
@@ -92,7 +92,7 @@ above. To add one later (a new device, or a driver missed out), use
 1. **Drivers Code → New Driver**: paste and save
    `drivers/dreo-cloud-connection.groovy`, then the drivers from the table
    above: `dreo-fan.groovy`, `dreo-ceiling-fan.groovy`,
-   `dreo-ceiling-light.groovy`, `dreo-light-ring.groovy`,
+   `dreo-ceiling-fan-light.groovy`, `dreo-fan-light-ring.groovy`,
    `dreo-humidifier.groovy`.
 2. **Apps Code → New App**: paste and save `apps/dreo-connect.groovy`.
 3. **Apps → Add User App → Dreo Connect**. Enter your Dreo email and
@@ -187,12 +187,12 @@ range (after a Dreo update, or a newer Dreo Connect) reaches existing devices.
 
 Switch, FanControl and the 1–12 speed number drive the fan motor (`fanon`), with the
 modes the fan's device list gives (normal, natural, sleep and reverse on most;
-auto instead of reverse on the DR-HCF002S). The main light becomes a **Dreo Ceiling Light**
+auto instead of reverse on the DR-HCF002S). The main light becomes a **Dreo Ceiling Fan Light**
 child (Switch, SwitchLevel, ColorTemperature 2700–6500 K). Ceiling fans put
 every load behind a `poweron` gate; the app adds the gate keys to each command
 the way the Dreo app does.
 
-### Dreo Light Ring
+### Dreo Fan Light Ring
 
 Switch, SwitchLevel (mapped to the ring's brightness steps, e.g. 1–3 on the
 DR-HPF008S), ColorControl (`atmcolor`, 24-bit RGB) and LightEffects
