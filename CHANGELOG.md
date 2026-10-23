@@ -5,6 +5,14 @@ and every driver, then press **Done** in the app.
 
 ## Unreleased
 
+- **No more stray sockets (memory).** The cloud connection now closes any old
+  WebSocket before opening a new one, closes a socket that failed, ignores the
+  old socket's close notice while connecting, skips a connect while one is
+  already in progress, and gives up on a connect after 30 s. After new driver
+  code, incoming data takes over the still-open socket instead of leaving it
+  idle with commands stuck. Found while chasing a hub that ran out of memory:
+  two Dreo Connect apps reconnecting against each other leaked about 21 MB an
+  hour.
 - **Pick the drivers you need.** In Hubitat Package Manager only the app and
   the Dreo Cloud Connection driver are required; the fan, ceiling fan,
   ceiling light, light ring and humidifier drivers are optional. The README

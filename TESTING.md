@@ -30,7 +30,9 @@ Hubitat runs) against small stand-ins for the hub, then runs:
 - **DriverFlowTest**: the app and real drivers together, with state passed
   through JSON as on a hub: discovery and rooms, **Look again**, child
   creation and removal, saved head positions,
-  WebSocket open/reports/acks, the one-at-a-time command queue, retries and
+  WebSocket open/reports/acks, socket hygiene (close before connect even after
+  new code, the old socket's close notice ignored, one report per drop, the
+  30 s connect timeout, taking over a live socket after new code), the one-at-a-time command queue, retries and
   reconnect after a missing ack, light ring and ceiling light children, the
   gate on a real command, online/offline, commands held for a device shown
   offline (sent if a refresh finds it online, dropped if it is still offline,

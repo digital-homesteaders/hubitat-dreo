@@ -287,9 +287,10 @@ check("commands queued while disconnected expire and refresh even if the socket 
     conn().disconnect()
     hub.settle()
     FakeDevice f = child("dreo-SN1")
+    int timers = conn().driver.callsNamed("runIn").size()
     f.on()
     hub.settle()
-    assert conn().driver.callsNamed("runIn").last()[2] == "expireQueue"
+    assert conn().driver.callsNamed("runIn").drop(timers)*.getAt(2).contains("expireQueue")
     int gets = app.callsNamed("asynchttpGet").size()
     conn().expireQueue()                        // too early: kept
     assert app.callsNamed("asynchttpGet").size() == gets
@@ -815,6 +816,78 @@ check("Done notes a device whose driver isn't installed, and clears it once it i
     app.updated()
     hub.settle()
     assert !child("dreo-SN2")
+}
+
+// ---- socket handling (the hub's memory-leak hunt, 2026-10-23): never leave an old socket open
+
+/** Calls made by the connection driver since `from`, by name. */
+List connCalls(int from) { conn().driver.calls.drop(from).collect { it[0] } }
+
+check("connect always closes any old socket first, even after new code emptied the driver's memory") {
+    conn().driver.getClass().MEM.clear()          // new code or a restart: phase unknown, socket maybe open
+    int from = conn().driver.calls.size()
+    conn().connect("wss://x")
+    List c = connCalls(from)
+    assert c.indexOf("ws.close") >= 0 && c.indexOf("ws.close") < c.indexOf("ws.connect")
+    assert conn().driver.callsNamed("runIn").last()[1..2] == [30, "connectTimeout"]
+}
+
+check("the old socket's close notice during a connect is ignored; the new socket then opens normally") {
+    int closed = app.callsNamed("runIn").count { it[2] == "connectSocket" }
+    conn().webSocketStatus("status: closing")
+    hub.settle()
+    assert conn().currentValue("connection") == "connecting"
+    assert app.callsNamed("runIn").count { it[2] == "connectSocket" } == closed, "no reconnect scheduled"
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    assert conn().currentValue("connection") == "connected"
+}
+
+check("a connect while connected, or while another is in progress, opens nothing new") {
+    int from = conn().driver.calls.size()
+    conn().connect("wss://x")
+    assert !connCalls(from).contains("ws.connect")
+    conn().webSocketStatus("failure: connection reset")
+    hub.settle()
+    conn().connect("wss://x")
+    from = conn().driver.calls.size()
+    conn().connect("wss://x")                      // still within the connect timeout
+    assert !connCalls(from).contains("ws.connect")
+}
+
+check("a failure closes the socket and is reported once, even with a close notice after it") {
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    int reports = app.log.at("info").count { it.contains("cloud connection closed") }
+    int from = conn().driver.calls.size()
+    conn().webSocketStatus("failure: connection reset")
+    conn().webSocketStatus("status: closing")
+    hub.settle()
+    assert connCalls(from).contains("ws.close"), "the failed socket is released"
+    assert app.log.at("info").count { it.contains("cloud connection closed") } == reports + 1
+}
+
+check("a connect that never answers times out and is handled as a drop") {
+    conn().connect("wss://x")
+    hub.settle()
+    int reports = app.log.at("info").count { it.contains("cloud connection closed") }
+    conn().connectTimeout()
+    hub.settle()
+    assert conn().currentValue("connection") == "disconnected"
+    assert app.log.at("info").last().contains("no answer from Dreo in 30 s")
+    assert app.log.at("info").count { it.contains("cloud connection closed") } == reports + 1
+}
+
+check("new code with the socket still up: incoming data takes it over instead of leaving it idle") {
+    conn().connect("wss://x")
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    conn().driver.getClass().MEM.clear()
+    int from = conn().driver.callsNamed("ws.send").size()
+    ws([devicesn: "SN1", method: "report", reported: [windlevel: 3]])
+    assert conn().driver.getClass().MEM[conn().idAsLong].phase == "open"
+    assert conn().currentValue("connection") == "connected"
+    assert conn().driver.callsNamed("ws.send").drop(from)*.getAt(1).contains("2"), "keepalive running again"
 }
 
 Check.finish()
