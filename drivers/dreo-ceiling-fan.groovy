@@ -2,7 +2,7 @@
  * Dreo Ceiling Fan: a Dreo ceiling fan, created by the Dreo Connect app.
  *
  * The fan motor is this device's switch. The main light becomes a
- * "Dreo Ceiling Light" child and a light ring (atm* keys) a "Dreo Light Ring"
+ * "Dreo Ceiling Fan Light" child and a light ring (atm* keys) a "Dreo Fan Light Ring"
  * child, so dashboards and voice assistants see ordinary lights.
  *
  * Ceiling fans put every load behind a poweron gate; the app adds the gate
@@ -17,7 +17,7 @@ import groovy.transform.Field
 @Field static final List SPEED_LEVELS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
 
 // Release version; the app compares it with its own (see dreoHello).
-@Field static final String DRIVER_VERSION = "0.2.0"
+@Field static final String DRIVER_VERSION = "0.3.0"
 
 metadata {
     definition(name: "Dreo Ceiling Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-fan.groovy") {
@@ -47,7 +47,9 @@ metadata {
 }
 
 // Child drivers by DNI suffix.
-@groovy.transform.Field static final Map CHILD_DRIVERS = [light: "Dreo Ceiling Light", ring: "Dreo Light Ring"]
+@groovy.transform.Field static final Map CHILD_DRIVERS = [light: "Dreo Ceiling Fan Light", ring: "Dreo Fan Light Ring"]
+// Names children were created with before 0.3 -> today's.
+@groovy.transform.Field static final Map OLD_CHILD_NAMES = ["Dreo Ceiling Light": "Dreo Ceiling Fan Light", "Dreo Light Ring": "Dreo Fan Light Ring"]
 
 // ---------------------------------------------------------------- lifecycle
 
@@ -147,6 +149,9 @@ private void childEvent(Map e) {
     String kind = e.child
     String dni = "${device.deviceNetworkId}-${kind}"
     def cd = getChildDevice(dni)
+    if (cd && cd.name in OLD_CHILD_NAMES.keySet()) {
+        try { cd.setName(OLD_CHILD_NAMES[cd.name]) } catch (ignored) { }   // named before 0.3
+    }
     if (!cd) {
         String driver = CHILD_DRIVERS[kind]
         String label = kind == "ring" ? "Light Ring" : "Light"

@@ -1,5 +1,5 @@
 /**
- * Dreo Ceiling Light: the main light of a Dreo ceiling fan, as a child of the
+ * Dreo Ceiling Fan Light: the main light of a Dreo ceiling fan, as a child of the
  * "Dreo Ceiling Fan" device. Commands go to the parent, which sends them to
  * Dreo; the parent sends state back through parse().
  *
@@ -9,10 +9,10 @@
 import groovy.transform.Field
 
 // Release version; the app compares it with its own (see dreoHello).
-@Field static final String DRIVER_VERSION = "0.2.0"
+@Field static final String DRIVER_VERSION = "0.3.0"
 
 metadata {
-    definition(name: "Dreo Ceiling Light", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-light.groovy") {
+    definition(name: "Dreo Ceiling Fan Light", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-ceiling-fan-light.groovy") {
         capability "Actuator"
         capability "Light"
         capability "Switch"

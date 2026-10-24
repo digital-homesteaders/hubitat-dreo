@@ -19,7 +19,7 @@ import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 
 // Release version; the app compares it with its own (see dreoHello).
-@Field static final String DRIVER_VERSION = "0.2.0"
+@Field static final String DRIVER_VERSION = "0.3.0"
 
 metadata {
     definition(name: "Dreo Cloud Connection", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-cloud-connection.groovy") {
@@ -34,6 +34,8 @@ metadata {
 }
 
 @Field static final int KEEPALIVE_SECONDS = 15
+// A connect that neither opens nor fails in this long is treated as failed.
+@Field static final int CONNECT_TIMEOUT_S = 30
 @Field static final long ACK_TIMEOUT_MS = 2000
 @Field static final int MAX_RETRIES = 2
 // Commands still queued after this long (e.g. while reconnecting) are dropped.
@@ -49,7 +51,8 @@ private Map mem() {
     Long id = device.idAsLong
     Map m = MEM.get(id)
     if (m == null) {
-        m = [queue: [], inflight: null, open: false]
+        // phase: null (unknown: new code or a restart), "connecting", "open" or "closed"
+        m = [queue: [], inflight: null, phase: null]
         MEM.putIfAbsent(id, m)
         m = MEM.get(id)
     }
@@ -86,20 +89,32 @@ def disconnect() {
 
 private void closeSocket() {
     unschedule("keepAlive")
+    unschedule("connectTimeout")
     // ackTimeout stays scheduled: it drops (and reports) a command still in
     // flight, which would otherwise block the queue after the reconnect.
-    mem().open = false
+    mem().phase = "closed"   // so the close notice that follows is not taken for a drop
     try { interfaces.webSocket.close() } catch (e) { /* not open */ }
     sendEvent(name: "connection", value: "disconnected")
 }
 
 /** Called by the app with a fresh URL (it carries the access token). */
 void connect(String url) {
-    if (device.currentValue("connection") == "connected" && mem().open) return
+    Map m = mem()
+    synchronized (m) {
+        if (m.phase == "open") return
+        // An attempt still in progress: don't start a second socket on top of it.
+        if (m.phase == "connecting" && now() - ((m.connectAt ?: 0L) as long) < CONNECT_TIMEOUT_S * 1000L) return
+        m.phase = "connecting"
+        m.connectAt = now()
+    }
     state.wanted = true
-    mem().open = false
     sendEvent(name: "connection", value: "connecting")
     logDebug "Connecting"
+    // New code or a hub restart empties MEM but can leave the old socket open,
+    // holding its buffers: close it first. Its "status: closing" notice is
+    // ignored while connecting (see webSocketStatus).
+    try { interfaces.webSocket.close() } catch (e) { /* not open */ }
+    runIn(CONNECT_TIMEOUT_S, "connectTimeout")
     try {
         interfaces.webSocket.connect(url, pingInterval: KEEPALIVE_SECONDS, headers: ["User-Agent": "okhttp/4.9.1"])
     } catch (e) {
@@ -107,16 +122,24 @@ void connect(String url) {
     }
 }
 
+/** The connect neither opened nor failed in time. */
+def connectTimeout() {
+    if (mem().phase == "connecting") socketDown("no answer from Dreo in ${CONNECT_TIMEOUT_S} s")
+}
+
 def webSocketStatus(String status) {
     logDebug "Status: ${status}"
     if (status.startsWith("status: open")) {
-        mem().open = true
+        mem().phase = "open"
+        unschedule("connectTimeout")
         state.failures = 0
         sendEvent(name: "connection", value: "connected")
         log.info "Dreo cloud connected"
         keepAlive()
         parent?.wsOpened()
         sendNext()
+    } else if (status.startsWith("status: closing") && mem().phase == "connecting") {
+        logDebug "Ignored a close notice while connecting: it is the previous socket's"
     } else if (status.startsWith("failure:") || status.startsWith("status: closing")) {
         socketDown(status)
     }
@@ -124,10 +147,16 @@ def webSocketStatus(String status) {
 
 /** The socket dropped or failed to open: tell the app, which schedules a reconnect. */
 private void socketDown(String reason) {
-    // A failure is often followed by a "closing" status: handle only the first.
-    if (device.currentValue("connection") == "disconnected" && !mem().open) return
-    mem().open = false
+    Map m = mem()
+    synchronized (m) {
+        // A failure is often followed by a "closing" status: handle only the first.
+        if (m.phase == "closed") return
+        m.phase = "closed"
+    }
     unschedule("keepAlive")
+    unschedule("connectTimeout")
+    // Release the failed socket's resources; its own close notice then finds nothing to do.
+    try { interfaces.webSocket.close() } catch (e) { /* already closed */ }
     sendEvent(name: "connection", value: "disconnected")
     if (state.wanted == false) return
     state.failures = (state.failures ?: 0) + 1
@@ -136,7 +165,7 @@ private void socketDown(String reason) {
 
 /** Dreo ignores the "2" text ping but the Dreo app sends it; protocol pings come from pingInterval. */
 def keepAlive() {
-    if (!mem().open) return
+    if (mem().phase != "open") return
     try {
         interfaces.webSocket.sendMessage("2")
     } catch (e) {
@@ -150,7 +179,16 @@ def keepAlive() {
 
 def parse(String text) {
     // Anything from Dreo shows the link is alive (see ackTimeout).
-    mem().lastRx = now()
+    Map m = mem()
+    m.lastRx = now()
+    if (m.phase == null) {
+        // New driver code emptied MEM while the socket stayed up: carry on with it.
+        m.phase = "open"
+        sendEvent(name: "connection", value: "connected")
+        logDebug "Took over the open socket after new code"
+        keepAlive()
+        sendNext()
+    }
     Map msg
     try {
         def j = new JsonSlurper().parseText(text)
@@ -213,7 +251,7 @@ void sendCommand(String sn, Map params) {
             m.queue << [sn: sn, params: params, queuedAt: now(), attempts: 0]
         }
     }
-    if (m.open) {
+    if (m.phase == "open") {
         sendNext()
         return
     }
@@ -242,7 +280,7 @@ private void sendNext() {
     Map m = mem()
     Map item
     synchronized (m) {
-        if (m.inflight || !m.open || !m.queue) return
+        if (m.inflight || m.phase != "open" || !m.queue) return
         item = m.queue.remove(0)
         m.inflight = item
         stamp(m, item)
@@ -284,7 +322,7 @@ def ackTimeout(Map data = null) {
         if (!item) return
         wait = (item.sentAt as long) + ACK_TIMEOUT_MS - now()
         if (wait <= 0) {
-            if ((item.attempts as int) <= MAX_RETRIES && m.open) {
+            if ((item.attempts as int) <= MAX_RETRIES && m.phase == "open") {
                 retry = true
                 stamp(m, item)
             } else {
@@ -306,7 +344,7 @@ def ackTimeout(Map data = null) {
     // No ack and nothing else from Dreo since the command went out usually
     // means a dead link the hub hasn't noticed yet. If other messages arrived,
     // the link works and only this device didn't answer: don't reconnect.
-    if (m.open && ((m.lastRx ?: 0L) as long) < (item.firstSentAt as long)) {
+    if (m.phase == "open" && ((m.lastRx ?: 0L) as long) < (item.firstSentAt as long)) {
         closeSocket()
         state.failures = 0
         parent?.wsClosed("no acknowledgement", 1)

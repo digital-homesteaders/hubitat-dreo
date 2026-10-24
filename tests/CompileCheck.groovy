@@ -38,8 +38,8 @@ Map<String, List<String>> parents = [
     "dreo-ceiling-fan.groovy": ["apps/dreo-connect.groovy"],
     "dreo-humidifier.groovy": ["apps/dreo-connect.groovy"],
     "dreo-cloud-connection.groovy": ["apps/dreo-connect.groovy"],
-    "dreo-light-ring.groovy": ["drivers/dreo-fan.groovy", "drivers/dreo-ceiling-fan.groovy"],
-    "dreo-ceiling-light.groovy": ["drivers/dreo-ceiling-fan.groovy"],
+    "dreo-fan-light-ring.groovy": ["drivers/dreo-fan.groovy", "drivers/dreo-ceiling-fan.groovy"],
+    "dreo-ceiling-fan-light.groovy": ["drivers/dreo-ceiling-fan.groovy"],
 ]
 
 boolean isPublic(Class c, String name) {
@@ -101,6 +101,14 @@ check("importUrl and packageManifest.json name the same files") {
         String p = root.toPath().relativize(f.toPath()).toString()
         assert u.group(1) in ["", locations[p]], "${p}: importUrl ${u.group(1)} vs manifest ${locations[p]}"
     }
+}
+
+// HPM installs only the app and the cloud connection; users pick the device drivers they need.
+check("packageManifest.json: only the app and the cloud connection are required") {
+    Map m = new groovy.json.JsonSlurper().parse(new File(root, "packageManifest.json"))
+    assert m.apps.every { it.required }
+    assert m.drivers.findAll { it.required }*.name == ["Dreo Cloud Connection"]
+    assert m.drivers.every { it.required instanceof Boolean }
 }
 
 Check.finish()

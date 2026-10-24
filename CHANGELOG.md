@@ -5,6 +5,29 @@ and every driver, then press **Done** in the app.
 
 ## Unreleased
 
+## 0.3.0 (2026-10-23)
+
+- **Clearer child driver names.** *Dreo Light Ring* is now **Dreo Fan Light
+  Ring** and *Dreo Ceiling Light* is now **Dreo Ceiling Fan Light**, so each
+  name says what it belongs to and sorts under its fan (files renamed to
+  match). **Updating by hand:** paste each renamed driver *over its existing
+  entry* in Drivers Code; don't create a new one, or you'll have two. HPM
+  updates the same entries itself. Existing light devices keep working and
+  take the new name on their fan's next update.
+- **No more stray sockets (memory).** The cloud connection now closes any old
+  WebSocket before opening a new one, closes a socket that failed, ignores the
+  old socket's close notice while connecting, skips a connect while one is
+  already in progress, and gives up on a connect after 30 s. After new driver
+  code, incoming data takes over the still-open socket instead of leaving it
+  idle with commands stuck. Found while chasing a hub that ran out of memory:
+  two Dreo Connect apps reconnecting against each other leaked about 21 MB an
+  hour.
+- **Pick the drivers you need.** In Hubitat Package Manager only the app and
+  the Dreo Cloud Connection driver are required; the fan, ceiling fan,
+  ceiling fan light, fan light ring and humidifier drivers are optional. The README
+  has a table of which models need which drivers, **Choose devices** lists the
+  drivers the ticked devices use, and the app's main page names any device it
+  couldn't add because its driver is missing.
 - The Dreo password hash moves from the app's state to a password-type
   setting, so the app's status page doesn't show it in plain text. Existing
   installs move it the next time the app's page is opened or **Done** is
