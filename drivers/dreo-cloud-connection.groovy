@@ -19,7 +19,7 @@ import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
 
 // Release version; the app compares it with its own (see dreoHello).
-@Field static final String DRIVER_VERSION = "0.2.0"
+@Field static final String DRIVER_VERSION = "0.3.0"
 
 metadata {
     definition(name: "Dreo Cloud Connection", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-cloud-connection.groovy") {

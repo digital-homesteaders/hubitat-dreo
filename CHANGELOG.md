@@ -5,6 +5,8 @@ and every driver, then press **Done** in the app.
 
 ## Unreleased
 
+## 0.3.0 (2026-10-23)
+
 - **Clearer child driver names.** *Dreo Light Ring* is now **Dreo Fan Light
   Ring** and *Dreo Ceiling Light* is now **Dreo Ceiling Fan Light**, so each
   name says what it belongs to and sorts under its fan (files renamed to
@@ -22,7 +24,7 @@ and every driver, then press **Done** in the app.
   hour.
 - **Pick the drivers you need.** In Hubitat Package Manager only the app and
   the Dreo Cloud Connection driver are required; the fan, ceiling fan,
-  ceiling light, light ring and humidifier drivers are optional. The README
+  ceiling fan light, fan light ring and humidifier drivers are optional. The README
   has a table of which models need which drivers, **Choose devices** lists the
   drivers the ticked devices use, and the app's main page names any device it
   couldn't add because its driver is missing.

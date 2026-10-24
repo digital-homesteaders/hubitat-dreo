@@ -4,7 +4,7 @@ Control Dreo cloud fans and humidifiers from a Hubitat Elevation hub: tower
 fans, air circulators and ceiling fans, including ceiling lights and light
 rings, and DR-HHM humidifiers.
 
-> **Status: 0.2.0, early testing on a Hubitat C-8.** Installing, signing in,
+> **Status: 0.3.0, early testing on a Hubitat C-8.** Installing, signing in,
 > discovery and device creation work for fans and a DR-HHM001S humidifier,
 > and on a DR-HPF008S live updates and commands from Hubitat (power, speeds,
 > modes, display, temperature) behave as expected. The other features follow

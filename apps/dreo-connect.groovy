@@ -43,7 +43,7 @@ preferences {
 
 // The release version, the same in the app, every driver and packageManifest.json
 // (scripts/release.sh sets them all). Drivers compare theirs with it.
-@Field static final String VERSION = "0.2.0"
+@Field static final String VERSION = "0.3.0"
 
 @Field static final String CLIENT_ID = "7de37c362ee54dcf9c4561812309347a"
 @Field static final String CLIENT_SECRET = "32dfa0764f25451d99f94e1693498791"
