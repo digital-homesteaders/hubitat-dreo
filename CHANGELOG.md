@@ -6,24 +6,25 @@ and every driver, then press **Done** in the app.
 ## Unreleased
 
 - **Cloud connection: fewer false drops.** Fixes from a code review of 0.3.0.
-  The old socket's close notice is still ignored when Hubitat delivers it just
-  after the new socket opened (previously it was taken for a drop and caused a
-  needless reconnect); a socket that opens after it was given up (Disconnect,
-  the 30 s timeout) is closed rather than kept; taking over a live socket after
-  new driver code now resets the failure count and starts the catch-up poll, as
-  an ordinary open does; a command sent right after new code asks for a socket
-  even though the device attribute still says "connecting"; and a connect
-  asked for while another attempt is out (e.g. after a fresh sign-in) is tried
-  as soon as that attempt fails instead of being dropped. All changes of the
-  connection's phase are now made under one lock.
+  The close notice for a socket the connection closed itself is expected and
+  ignored exactly once, even when Hubitat delivers it just after the new
+  socket opened (previously it was taken for a drop and caused a needless
+  reconnect), while a close with nothing outstanding still counts as a drop;
+  a socket that opens after it was given up (Disconnect, the 30 s timeout) is
+  closed rather than kept; taking over a live socket after new driver code
+  resets the failure count and starts the catch-up poll, as an ordinary open
+  does; and a command sent right after new code asks for a socket even though
+  the device attribute still says "connecting". All changes of the
+  connection's phase are made under one lock.
 - **Missing light drivers.** A fan whose light or light ring driver isn't
-  installed logs the error once (not on every report) and the app's main page
-  names it under **Not added**, next to devices the app itself couldn't add.
-  A light ring found in a fan's own device list (not just the model table)
-  counts in the **Choose devices** drivers list. A device that fails to add
-  for another reason is reported with that reason rather than as a missing
-  driver. The pre-0.3 light child names are now updated when **Done** is
-  pressed, not on each report.
+  installed logs the error once and the app's main page names it under **Not
+  added**, next to devices the app itself couldn't add; it is tried again
+  after **Done** (so install the driver, then press Done). A light ring found
+  in a fan's own device list (not just the model table) counts in the
+  **Choose devices** drivers list. A device that fails to add for another
+  reason is reported with that reason rather than as a missing driver. The
+  pre-0.3 light child names are updated when **Done** is pressed, not on each
+  report.
 
 ## 0.3.0 (2026-10-23)
 

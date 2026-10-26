@@ -31,11 +31,12 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   through JSON as on a hub: discovery and rooms, **Look again**, child
   creation and removal, saved head positions,
   WebSocket open/reports/acks, socket hygiene (close before connect even after
-  new code, the old socket's close notice ignored while connecting and just
-  after the open, one report per drop, the 30 s connect timeout, an open after
+  new code, the old socket's close notice ignored once whether it comes while
+  connecting or just after the open, a close with nothing outstanding counted
+  as a drop, one report per drop, the 30 s connect timeout, an open after
   Disconnect or the timeout closed again, taking over a live socket after new
   code with the app told, a command after new code asking for a socket, a
-  newer URL tried when the attempt it waited on fails), the one-at-a-time command queue, retries and
+  connect during another attempt opening nothing), the one-at-a-time command queue, retries and
   reconnect after a missing ack, light ring and ceiling light children, the
   gate on a real command, online/offline, commands held for a device shown
   offline (sent if a refresh finds it online, dropped if it is still offline,
@@ -47,8 +48,9 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   and moved there from a 0.2 install's state; the drivers **Choose devices**
   lists for the ticked devices, a device whose driver is missing named on
   the main page until the driver is installed, and a fan whose light ring
-  driver is missing: error logged once, named on the main page, child created
-  once the driver is there; the 0.2 light child names updated on Done.
+  driver is missing: error logged once, named on the main page, not tried
+  again until Done, then the child created; the 0.2 light child names
+  updated on Done.
 - **FixtureTest**: every file in `tests/fixtures/`, a real device-list entry
   and full state in the **Log raw Dreo data** shape, goes through discovery,
   device creation, a REST refresh, the events and every driver and light
@@ -132,11 +134,12 @@ itself still needs checking.
    drivers list as the ticks change; the missing-driver note on the main page
    with one driver left out, and with a fan's light ring driver left out (one
    error in Logs, the fan named on the main page, the ring device appearing
-   once the driver is pasted in and the fan next reports).
-9. The 0.3.0 review fixes to the cloud connection: that Hubitat's `status:
-   closing` for a socket closed by `connect()` can indeed arrive after the
-   new socket's `status: open` (the 3 s grace covers it), and that a connect
-   attempt the hub gives up on never leaves a socket open.
+   after the driver is pasted in, Done is pressed and the fan next reports).
+9. The 0.3.0 review fixes to the cloud connection: that Hubitat delivers one
+   `status: closing` for a socket the driver closed itself, and none for one
+   that had already failed (the driver expects exactly one after its own
+   close, and takes it for the old socket's only within 3 s of the new open);
+   and that a connect attempt the hub gives up on never leaves a socket open.
 
 ### The password hash setting
 

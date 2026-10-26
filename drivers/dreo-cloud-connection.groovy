@@ -36,8 +36,8 @@ metadata {
 @Field static final int KEEPALIVE_SECONDS = 15
 // A connect that neither opens nor fails in this long is treated as failed.
 @Field static final int CONNECT_TIMEOUT_S = 30
-// A close notice this soon after a connect is the previous socket's (closed by
-// connect()), even if the new socket has opened meanwhile.
+// The close notice for a socket connect() closed may arrive after the new
+// socket has opened; one notice this soon after the open is taken as the old one's.
 @Field static final long OLD_CLOSE_GRACE_MS = 3000
 @Field static final long ACK_TIMEOUT_MS = 2000
 @Field static final int MAX_RETRIES = 2
@@ -56,7 +56,8 @@ private Map mem() {
     if (m == null) {
         // phase: null (unknown: new code or a restart), "connecting", "open" or
         // "closed". Every change to it happens under synchronized (m).
-        m = [queue: [], inflight: null, phase: null, nextUrl: null]
+        // expectClose: a socket was closed by us, so one close notice is still due.
+        m = [queue: [], inflight: null, phase: null, expectClose: false]
         MEM.putIfAbsent(id, m)
         m = MEM.get(id)
     }
@@ -98,8 +99,9 @@ private void closeSocket() {
     // flight, which would otherwise block the queue after the reconnect.
     Map m = mem()
     synchronized (m) {
-        m.phase = "closed"   // so the close notice that follows is not taken for a drop
-        m.nextUrl = null
+        // The notice for this close finds the phase closed, so it is not taken for a drop.
+        if (m.phase != "closed") m.expectClose = true
+        m.phase = "closed"
     }
     try { interfaces.webSocket.close() } catch (e) { /* not open */ }
     sendEvent(name: "connection", value: "disconnected")
@@ -110,22 +112,22 @@ void connect(String url) {
     Map m = mem()
     synchronized (m) {
         if (m.phase == "open") return
+        // An attempt in progress: don't start a second socket on top of it. If
+        // it fails, the app reconnects with whatever token is current by then.
         if (m.phase == "connecting" && now() - ((m.connectAt ?: 0L) as long) < CONNECT_TIMEOUT_S * 1000L) {
-            // An attempt is in progress: don't start a second socket on top of
-            // it. Should it fail, this newer URL (e.g. a fresh sign-in) is tried next.
-            m.nextUrl = url
+            logDebug "Connect already in progress"
             return
         }
+        // New code or a hub restart empties MEM but can leave the old socket
+        // open, holding its buffers: close it first (below). Its close notice
+        // is then expected and ignored (see oldSocketsClose).
+        if (m.phase != "closed") m.expectClose = true
         m.phase = "connecting"
         m.connectAt = now()
-        m.nextUrl = null
     }
     state.wanted = true
     sendEvent(name: "connection", value: "connecting")
     logDebug "Connecting"
-    // New code or a hub restart empties MEM but can leave the old socket open,
-    // holding its buffers: close it first. Its "status: closing" notice is
-    // ignored while connecting (see webSocketStatus).
     try { interfaces.webSocket.close() } catch (e) { /* not open */ }
     runIn(CONNECT_TIMEOUT_S, "connectTimeout")
     try {
@@ -147,7 +149,13 @@ def webSocketStatus(String status) {
         String was
         synchronized (m) {
             was = m.phase
-            if (was == "connecting" || was == null) m.phase = "open"
+            if (was == "connecting" || was == null) {
+                m.phase = "open"
+                m.openedAt = now()
+                // New code while a connect was out: the socket connect() closed
+                // may still send its notice; allow for one.
+                if (was == null) m.expectClose = true
+            }
         }
         if (was == "open") return
         if (was == "closed") {
@@ -165,14 +173,17 @@ def webSocketStatus(String status) {
 }
 
 /**
- * Whether a close notice now is the previous socket's, closed by connect():
- * while the new one is connecting, or just after it opened (Hubitat may
- * deliver the old notice late).
+ * Whether a close notice is the previous socket's: one is due because we
+ * closed it, and the new socket is still connecting or has only just opened
+ * (Hubitat may deliver the old notice late). Either way the notice uses up
+ * the expectation, so a second one counts.
  */
 private boolean oldSocketsClose(Map m) {
     synchronized (m) {
-        if (m.phase == "connecting") return true
-        return m.phase == "open" && now() - ((m.connectAt ?: 0L) as long) < OLD_CLOSE_GRACE_MS
+        boolean due = m.expectClose
+        m.expectClose = false
+        return due && (m.phase == "connecting" ||
+            (m.phase == "open" && now() - ((m.openedAt ?: 0L) as long) < OLD_CLOSE_GRACE_MS))
     }
 }
 
@@ -190,13 +201,11 @@ private void opened(String note) {
 /** The socket dropped or failed to open: tell the app, which schedules a reconnect. */
 private void socketDown(String reason) {
     Map m = mem()
-    String nextUrl
     synchronized (m) {
         // A failure is often followed by a "closing" status: handle only the first.
         if (m.phase == "closed") return
         m.phase = "closed"
-        nextUrl = m.nextUrl
-        m.nextUrl = null
+        m.expectClose = false   // a notice after a failure finds the phase closed anyway
     }
     unschedule("keepAlive")
     unschedule("connectTimeout")
@@ -204,12 +213,6 @@ private void socketDown(String reason) {
     try { interfaces.webSocket.close() } catch (e) { /* already closed */ }
     sendEvent(name: "connection", value: "disconnected")
     if (state.wanted == false) return
-    if (nextUrl) {
-        // A newer URL arrived during the failed attempt: no need to wait for the app's retry.
-        logDebug "Connect failed (${reason}); trying the newer URL"
-        connect(nextUrl)
-        return
-    }
     state.failures = (state.failures ?: 0) + 1
     parent?.wsClosed(reason, state.failures as int)
 }
@@ -236,7 +239,7 @@ def parse(String text) {
     synchronized (m) {
         // New driver code emptied MEM while the socket stayed up: carry on with it.
         tookOver = m.phase == null
-        if (tookOver) m.phase = "open"
+        if (tookOver) { m.phase = "open"; m.openedAt = now() }
     }
     if (tookOver) opened("Took over the open socket after new code")
     Map msg

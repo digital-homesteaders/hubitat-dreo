@@ -220,8 +220,9 @@ def mainPage() {
                 href "fansPage", title: "Choose devices", description: selectedSummary()
                 List notAdded = (state.missingDrivers ?: []) + missingChildDrivers()
                 if (notAdded) {
-                    paragraph "<b>Not added:</b> ${notAdded.join('; ')}. Install a missing driver (Hubitat " +
-                        "Package Manager's Modify, or paste it into Drivers Code), then press Done."
+                    paragraph "<b>Not added:</b> ${notAdded.join('; ')}." + (notAdded.any { it.contains(" needs '") }
+                        ? " Install the driver (Hubitat Package Manager's Modify, or paste it into Drivers Code), then press Done."
+                        : "")
                 }
                 getFanDevices().each { cd ->
                     def what = cd.getDataValue("kind") == "humidifier"
@@ -429,10 +430,48 @@ private boolean missingDriver(Throwable e) {
     return e.class.simpleName == "UnknownDeviceTypeException" || (e.message ?: "") ==~ /(?i).*(not found|no driver).*/
 }
 
-/** Light children a fan could not add because their driver is missing (the fan records it in `missingDrivers`). */
+// ---------------------------------------------------------------- light children (for the fan drivers)
+
+// Names light children were created with before 0.3 -> today's (see lightHello).
+@Field static final Map OLD_CHILD_NAMES = ["Dreo Ceiling Light": "Dreo Ceiling Fan Light", "Dreo Light Ring": "Dreo Fan Light Ring"]
+
+/** Whether a fan's light child driver has been found missing since the last Done (see lightDriverFailed). */
+boolean lightDriverMissing(cd, String driver) {
+    return driver in missingLightDrivers(cd)
+}
+
+/**
+ * A fan could not add a light child: logged once and noted in the fan's
+ * `missingDrivers` data value, which the main page shows. Done clears the
+ * note (checkDrivers), so the fan's next report tries again.
+ */
+void lightDriverFailed(cd, String driver, String message) {
+    List missing = missingLightDrivers(cd)
+    if (driver in missing) return
+    cd.updateDataValue("missingDrivers", (missing + driver).join(", "))
+    log.error "Dreo: could not add the '${driver}' device for ${cd.displayName}: ${message} (is the driver installed? Install it, then press Done)"
+}
+
+/** A fan's light child on Done: a pre-0.3 name is updated, and its driver version checked like the fan's. */
+List lightHello(c, String appVersion) {
+    if (OLD_CHILD_NAMES[c.name]) {
+        try { c.setName(OLD_CHILD_NAMES[c.name]) } catch (ignored) { }
+    }
+    try {
+        return c.dreoHello(appVersion) ?: []
+    } catch (e) {
+        return ["${c.displayName} (older)".toString()]
+    }
+}
+
+private List missingLightDrivers(cd) {
+    return (cd.getDataValue("missingDrivers") ?: "").split(", ").findAll { it }
+}
+
+/** The main page's entries for light children that couldn't be added. */
 private List missingChildDrivers() {
     return getFanDevices().findAll { it.getDataValue("missingDrivers") }.collect { cd ->
-        "${cd.displayName} needs ${cd.getDataValue('missingDrivers').split(', ').collect { "'${it}'" }.join(' and ')}".toString()
+        "${cd.displayName} needs ${missingLightDrivers(cd).collect { "'${it}'" }.join(' and ')}".toString()
     }
 }
 
@@ -465,6 +504,8 @@ String dreoVersion() { VERSION }
  * children). A driver too old to answer is from an earlier version too.
  */
 private void checkDrivers() {
+    // A light driver noted missing is tried again after Done (see lightDriverFailed).
+    getFanDevices().each { if (it.getDataValue("missingDrivers")) it.removeDataValue("missingDrivers") }
     List odd = []
     getChildDevices().each { cd ->
         try {
@@ -1230,8 +1271,7 @@ Map fanLimits(def conf, String model = null) {
     }
     if (modes) out.modes = modes.sort { it[1] }.collect { "${it[0]}=${it[1]}" }.join(",")
     // A light ring is a control whose command is an atm* key (CFAtmosphere on ceiling fans).
-    List all = (conf.control instanceof List ? conf.control : []) + extra
-    if (all.any { it instanceof Map && ("${it.cmd}".startsWith("atm") || "${it.type}".toLowerCase().contains("atmosphere")) }) out.lightRing = "true"
+    if ((controls + extra).any { it instanceof Map && ("${it.cmd}".startsWith("atm") || "${it.type}".toLowerCase().contains("atmosphere")) }) out.lightRing = "true"
     return out
 }
 
