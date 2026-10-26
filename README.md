@@ -140,7 +140,14 @@ European accounts are both supported; the region is picked up at sign-in.
 | TemperatureMeasurement | `temperature` + `tempoffset`, in the unit set by `tempunit` (1 = °F), shown in the hub's scale |
 | `setHeadPosition(vertical, horizontal)`, `headVertical`, `headHorizontal` | `fixedconf` ("vertical,horizontal"): where the head points when not oscillating, in degrees. Leave one empty to keep it; an oscillating fan stops oscillating. Fans that report it (e.g. DR-HPF004S, DR-HPF008S). |
 | `setOscillationRange(left, right, bottom, top)`, `oscillationLeft` … `oscillationTop` | `cruiseconf` ("top,right,bottom,left"): the oscillation limits, at least 30° apart on each axis; empty keeps a limit |
+| `setOscillationSweep(horizontal, vertical)` | `cruiseconf` set the way the Dreo app's quick presets do: a horizontal width centred straight ahead (10° steps), a vertical width opening upward from the lowest tilt (5° steps); leave one empty to keep it. `setOscillationRange` rounds its limits to 5° too. |
+| `setOscillationAngle(angle)`, `oscillationAngle`, `supportedOscillationAngles` | `shakehorizonangle`: the sweep width of a tower fan, from the presets in its device list (30, 60, 90, 120° on the DR-HTF004S) |
 | `savePosition(slot, name)`, `goToPosition(slot)`, `deletePosition(slot)`, `savedPositions` | Up to five head positions kept on the Hubitat device (Dreo's cloud has no saved positions). `goToPosition` also takes a saved name, for rules. |
+| `setTemperatureOffset(n)`, `temperatureOffset` | `tempoffset`: the Dreo app's temperature calibration, −10 to 10 in the fan's own unit, on fans that report it |
+| `setAdaptiveBrightness(on/off)`, `adaptiveBrightness` | `lightsensoron`: dim the display with the room light, on fans that report it |
+| `setMist(on/off)`, `mist` | `miston` on misting tower fans (DR-HTF021S, DR-HTF027S) |
+| `setTimerOn(minutes)`, `setTimerOff(minutes)`, `timerOn`, `timerOff` | `timeron` / `timeroff`: switch on or off after 0–719 minutes (0 cancels). The attributes show the minutes Dreo last reported. |
+| `setSchedules(on/off)`, `schedules` | `scheon`: run or pause the schedules set in the Dreo app (the schedules themselves aren't shown yet) |
 | `healthStatus` | fan online/offline; also offline while the cloud connection is down (see [How it works](#how-it-works)) |
 
 Angles are clamped to the head's range: hass-dreo's per-model ranges (for
@@ -190,14 +197,17 @@ modes the fan's device list gives (normal, natural, sleep and reverse on most;
 auto instead of reverse on the DR-HCF002S). The main light becomes a **Dreo Ceiling Fan Light**
 child (Switch, SwitchLevel, ColorTemperature 2700–6500 K). Ceiling fans put
 every load behind a `poweron` gate; the app adds the gate keys to each command
-the way the Dreo app does.
+the way the Dreo app does. Timers (`setTimerOn`, `setTimerOff`) and the
+schedules switch (`setSchedules`) work as on the other fans.
 
 ### Dreo Fan Light Ring
 
 Switch, SwitchLevel (mapped to the ring's brightness steps, e.g. 1–3 on the
 DR-HPF008S), ColorControl (`atmcolor`, 24-bit RGB) and LightEffects
-(1 constant, 2 circle, 3 breath). Changing colour, brightness or effect on a
-dark ring turns it on, like the Dreo app.
+(1 constant, 2 circle, 3 breath), plus `setEffectSpeed(low/medium/high)` and
+`effectSpeed` (`atmspeed`) for how fast the circle and breath effects run.
+Changing colour, brightness, effect or effect speed on a dark ring turns it
+on, like the Dreo app.
 
 ### Dreo Humidifier (DR-HHM)
 
@@ -216,9 +226,12 @@ samples.
 | `waterLevel` | `waterlevel` %, on newer models that report it |
 | `useSinceCleaning` | `worktime`, hours since the tank was last cleaned (per hass-dreo) |
 | `filterLife` | `filtertime`, filter life % (per hass-dreo), on models that report it |
-| `setDisplay(on/off)`, `display` | `ledlevel` (0 off, 2 on) |
+| `setDisplay(on/off)`, `display` | `ledlevel`: 0 off; on restores the level last seen (the Dreo app lets you pick one), else 2 |
 | `setPanelSound(on/off)`, `panelSound` | `muteon` |
-| `setAmbientLight(on/off)`, `ambientLight` | `ambient_switch`, or `rgblevel` (0 off, 2 on) |
+| `setAmbientLight(on/off)`, `ambientLight` | `ambient_switch`, or `rgblevel` (0 off; on restores the level last seen, else 2) |
+| `setAdaptiveBrightness(on/off)`, `adaptiveBrightness` | `lightsensoron`: dim the display with the room light |
+| `setTimerOn(minutes)`, `setTimerOff(minutes)`, `timerOn`, `timerOff` | `timeron` / `timeroff`, 0–719 minutes (0 cancels) |
+| `setSchedules(on/off)`, `schedules` | `scheon`: run or pause the schedules set in the Dreo app |
 | `healthStatus` | online/offline; also offline while the cloud connection is down |
 
 The target-humidity and mist ranges come from the device list Dreo sends at
@@ -232,11 +245,14 @@ attributes.
 ## Limitations
 
 - Needs Dreo's cloud; there is no local control.
-- Not in v1: preset sweep widths (`shakehorizonangle`), on/off timers,
-  schedules, misting, temperature calibration offset, air purifiers, heaters
-  and other Dreo devices; on humidifiers, the RGB humidity-indicator light
-  (DR-HHM015S), light colours and brightness levels, resetting the filter and
-  cleaning counters.
+- Not yet: the schedules themselves (only their on/off switch; the Homey app
+  shows the list), air purifiers, heaters and other Dreo devices; on
+  humidifiers, the RGB humidity-indicator light (DR-HHM015S), light colours
+  and brightness levels, resetting the filter and cleaning counters.
+- Which settings a device has is read from the state it reports, so a
+  command for a setting the device doesn't report is refused with a warning
+  in **Logs**. The feature list both the Hubitat and Homey apps work from is
+  kept in the maintainers' `dreo-research/dreo-feature-matrix.md`.
 - Models whose device list has no speed or mode data and that aren't in the
   built-in table use their family's defaults (towers and circulators 1–9 with
   normal/natural/sleep/auto; ceiling fans 1–12 with

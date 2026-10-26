@@ -5,6 +5,26 @@ and every driver, then press **Done** in the app.
 
 ## Unreleased
 
+- **Settings the Homey app already had.** Every device: on and off timers
+  (`setTimerOn`, `setTimerOff`, 0–719 minutes, 0 cancels; `timerOn`,
+  `timerOff` show the minutes Dreo reports) and the schedules switch
+  (`setSchedules`, `schedules`: run or pause the schedules set in the Dreo
+  app). Fans and humidifiers: adaptive display brightness
+  (`setAdaptiveBrightness`, `adaptiveBrightness`, `lightsensoron`). Tower
+  fans: the sweep-width preset (`setOscillationAngle`, `oscillationAngle`,
+  `supportedOscillationAngles` from the fan's device list, e.g. 30/60/90/120°
+  on the DR-HTF004S). Two-axis fans: `setOscillationSweep(horizontal,
+  vertical)`, the Dreo app's quick presets (a width centred straight ahead,
+  or opening upward from the lowest tilt), and `setOscillationRange` now
+  rounds limits to 5° as the Dreo app does. Fans with calibration:
+  `setTemperatureOffset`, `temperatureOffset` (−10 to 10 in the fan's own
+  unit). Misting towers: `setMist`, `mist`. Light rings: `setEffectSpeed`
+  (low, medium, high) and `effectSpeed`.
+- **Humidifier display and ambient light** come back at the level they had
+  (the Dreo app lets you pick one) instead of always level 2.
+- Rooms: every page of Dreo's rooms list is read, not only the first.
+- The half-hourly refresh reads devices two seconds apart instead of all at once.
+- Re-paste: the app and every driver (new commands and attributes).
 - **Cloud connection: fewer false drops.** Fixes from a code review of 0.3.0.
   The close notice for a socket the connection closed itself is expected and
   ignored exactly once, even when Hubitat delivers it just after the new

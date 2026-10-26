@@ -48,6 +48,14 @@ metadata {
         attribute "oscillationBottom", "number"
         attribute "oscillationTop", "number"
         attribute "savedPositions", "JSON_OBJECT"
+        attribute "oscillationAngle", "number"
+        attribute "supportedOscillationAngles", "JSON_OBJECT"
+        attribute "timerOn", "number"
+        attribute "timerOff", "number"
+        attribute "schedules", "string"
+        attribute "adaptiveBrightness", "string"
+        attribute "temperatureOffset", "number"
+        attribute "mist", "string"
         attribute "healthStatus", "enum", ["online", "offline"]
 
         command "setSpeedLevel", [[name: "Speed (1 to 12)*", type: "ENUM", description: "The speed number as in the Dreo app (maxSpeedLevel is this fan's top one); a number above it uses the top speed", constraints: SPEED_LEVELS]]
@@ -69,6 +77,16 @@ metadata {
             [name: "Name", type: "STRING", description: "Optional, e.g. Desk"]]
         command "goToPosition", [[name: "Slot*", type: "ENUM", description: "Point the head at a saved position (see savedPositions)", constraints: POSITION_SLOTS]]
         command "deletePosition", [[name: "Slot*", type: "ENUM", description: "Forget a saved position", constraints: POSITION_SLOTS]]
+        command "setOscillationAngle", [[name: "Angle*", type: "NUMBER", description: "Sweep width in degrees, one of supportedOscillationAngles (tower fans with an oscillationAngle attribute)"]]
+        command "setOscillationSweep", [
+            [name: "Horizontal width", type: "NUMBER", description: "Degrees, centred straight ahead (30 to twice the head's reach); empty keeps it"],
+            [name: "Vertical width", type: "NUMBER", description: "Degrees, from the lowest tilt upward; empty keeps it. Fans with oscillation limits."]]
+        command "setTimerOn", [[name: "Minutes*", type: "NUMBER", description: "Switch the fan on after this many minutes (0 to 719; 0 cancels)"]]
+        command "setTimerOff", [[name: "Minutes*", type: "NUMBER", description: "Switch the fan off after this many minutes (0 to 719; 0 cancels)"]]
+        command "setSchedules", [[name: "Schedules*", type: "ENUM", description: "Run or pause the schedules set in the Dreo app", constraints: ["on", "off"]]]
+        command "setAdaptiveBrightness", [[name: "Adaptive brightness*", type: "ENUM", description: "Dim the display with the room light (fans with an adaptiveBrightness attribute)", constraints: ["on", "off"]]]
+        command "setTemperatureOffset", [[name: "Offset*", type: "NUMBER", description: "Temperature calibration, -10 to 10 in the fan's own unit (fans with a temperatureOffset attribute)"]]
+        command "setMist", [[name: "Mist*", type: "ENUM", description: "Misting on or off (misting fans)", constraints: ["on", "off"]]]
     }
     preferences {
         input "speedSteps", "number", title: "Number of speed steps (0 = from the model)", defaultValue: 0, range: "0..20"
@@ -109,6 +127,14 @@ def setHeadPosition(vertical = null, horizontal = null) { sendDreo("setHeadPosit
 def setOscillationRange(left = null, right = null, bottom = null, top = null) {
     sendDreo("setOscillationRange", [left, right, bottom, top])
 }
+def setOscillationAngle(angle) { sendDreo("setOscillationAngle", [angle]) }
+def setOscillationSweep(horizontal = null, vertical = null) { sendDreo("setOscillationSweep", [horizontal, vertical]) }
+def setTimerOn(minutes) { sendDreo("setTimerOn", [minutes]) }
+def setTimerOff(minutes) { sendDreo("setTimerOff", [minutes]) }
+def setSchedules(value) { sendDreo("setSchedules", [value]) }
+def setAdaptiveBrightness(value) { sendDreo("setAdaptiveBrightness", [value]) }
+def setTemperatureOffset(offset) { sendDreo("setTemperatureOffset", [offset]) }
+def setMist(value) { sendDreo("setMist", [value]) }
 
 // ---------------------------------------------------------------- saved head positions
 
@@ -157,6 +183,7 @@ def componentSetSaturation(cd, saturation) { sendDreo("ring.setSaturation", [sat
 def componentSetEffect(cd, effect) { sendDreo("ring.setEffect", [effect]) }
 def componentSetNextEffect(cd) { sendDreo("ring.setNextEffect") }
 def componentSetPreviousEffect(cd) { sendDreo("ring.setPreviousEffect") }
+def componentSetEffectSpeed(cd, speed) { sendDreo("ring.setEffectSpeed", [speed]) }
 def componentRefresh(cd) { refresh() }
 
 private void sendDreo(String cmd, List args = []) {

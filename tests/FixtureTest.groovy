@@ -39,8 +39,12 @@ List fanCommands(FakeDevice d, Map s) {
         json(d.currentValue("supportedOscillation") ?: "[]").each { c << ["setOscillation", it] }
         json(d.currentValue("supportedDisplay") ?: "[]").each { c << ["setDisplay", it] }
         c << ["setHeadPosition", 10, 20] << ["setOscillationRange", -45, 45, 0, 60]
+        c << ["setOscillationSweep", 90] << ["setOscillationSweep", null, 60]
+        json(d.currentValue("supportedOscillationAngles") ?: "[]").each { c << ["setOscillationAngle", it] }
+        c << ["setAdaptiveBrightness", "off"] << ["setAdaptiveBrightness", "on"] << ["setTemperatureOffset", 2] << ["setMist", "on"]
     }
     c << ["setPanelSound", "off"] << ["setPanelSound", "on"] << ["setChildLock", "on"] << ["setChildLock", "off"]
+    c << ["setTimerOn", 30] << ["setTimerOff", 45] << ["setTimerOff", 0] << ["setSchedules", "off"] << ["setSchedules", "on"]
     return c
 }
 
@@ -48,13 +52,14 @@ List humidifierCommands(FakeDevice d) {
     List c = [["on"], ["off"], ["on"]]
     json(d.currentValue("supportedModes") ?: "[]").each { c << ["setMode", it] }
     c << ["setTargetHumidity", 45] << ["setMistLevel", 2] << ["setDisplay", "off"] << ["setDisplay", "on"]
-    c << ["setPanelSound", "off"] << ["setAmbientLight", "off"]
+    c << ["setPanelSound", "off"] << ["setAmbientLight", "off"] << ["setAmbientLight", "on"]
+    c << ["setTimerOn", 30] << ["setTimerOff", 0] << ["setSchedules", "off"] << ["setAdaptiveBrightness", "on"]
     return c
 }
 
 List lightCommands() {
     [["on"], ["setLevel", 40], ["setColor", [hue: 50, saturation: 100]], ["setHue", 20], ["setSaturation", 60],
-     ["setEffect", 2], ["setNextEffect"], ["setPreviousEffect"], ["setColorTemperature", 4000], ["off"]]
+     ["setEffect", 2], ["setNextEffect"], ["setPreviousEffect"], ["setEffectSpeed", "high"], ["setColorTemperature", 4000], ["off"]]
 }
 
 def json(String s) { new JsonSlurper().parseText(s) }

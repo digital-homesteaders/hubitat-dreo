@@ -32,12 +32,18 @@ metadata {
         attribute "supportedModes", "JSON_OBJECT"
         attribute "panelSound", "string"
         attribute "childLock", "string"
+        attribute "timerOn", "number"
+        attribute "timerOff", "number"
+        attribute "schedules", "string"
         attribute "healthStatus", "enum", ["online", "offline"]
 
         command "setSpeedLevel", [[name: "Speed (1 to 12)*", type: "ENUM", description: "The speed number as in the Dreo app (maxSpeedLevel is this fan's top one); a number above it uses the top speed", constraints: SPEED_LEVELS]]
         command "setMode", [[name: "Mode*", type: "ENUM", description: "Fan mode to set; this fan's modes are in supportedModes", constraints: ["normal", "natural", "sleep", "reverse", "auto"]]]
         command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed", constraints: ["on", "off"]]]
         command "setChildLock", [[name: "Child lock*", type: "ENUM", description: "Lock the fan's buttons", constraints: ["on", "off"]]]
+        command "setTimerOn", [[name: "Minutes*", type: "NUMBER", description: "Switch the fan on after this many minutes (0 to 719; 0 cancels)"]]
+        command "setTimerOff", [[name: "Minutes*", type: "NUMBER", description: "Switch the fan off after this many minutes (0 to 719; 0 cancels)"]]
+        command "setSchedules", [[name: "Schedules*", type: "ENUM", description: "Run or pause the schedules set in the Dreo app", constraints: ["on", "off"]]]
     }
     preferences {
         input "speedSteps", "number", title: "Number of speed steps (0 = from the model)", defaultValue: 0, range: "0..20"
@@ -74,6 +80,9 @@ def setSpeedLevel(level) { sendDreo("setSpeedLevel", [level]) }
 def setMode(mode) { sendDreo("setMode", [mode]) }
 def setPanelSound(value) { sendDreo("setPanelSound", [value]) }
 def setChildLock(value) { sendDreo("setChildLock", [value]) }
+def setTimerOn(minutes) { sendDreo("setTimerOn", [minutes]) }
+def setTimerOff(minutes) { sendDreo("setTimerOff", [minutes]) }
+def setSchedules(value) { sendDreo("setSchedules", [value]) }
 
 // Light and light ring child (component) commands.
 def componentOn(cd) { sendDreo("${childKind(cd)}.on") }
@@ -86,6 +95,7 @@ def componentSetSaturation(cd, saturation) { sendDreo("ring.setSaturation", [sat
 def componentSetEffect(cd, effect) { sendDreo("ring.setEffect", [effect]) }
 def componentSetNextEffect(cd) { sendDreo("ring.setNextEffect") }
 def componentSetPreviousEffect(cd) { sendDreo("ring.setPreviousEffect") }
+def componentSetEffectSpeed(cd, speed) { sendDreo("ring.setEffectSpeed", [speed]) }
 def componentRefresh(cd) { refresh() }
 
 private String childKind(cd) {

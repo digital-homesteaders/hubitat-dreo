@@ -1053,4 +1053,123 @@ check("a fan whose light ring driver is missing says so once, and on the app's p
     assert f.driver.getChildDevice("dreo-SN1-ring")
 }
 
+// ---- parity with the Homey app (2026-10-26): room pages, remembered humidifier levels, spread-out polls
+
+check("rooms: every page of the list is read, up to a limit") {
+    Hub h2 = new Hub(root)
+    def a2 = h2.app()
+    a2.settings.email = "me@example.com"
+    a2.state.emailUsed = "me@example.com"
+    a2.settings.passwordMd5 = "x"
+    a2.state.token = "tok"
+    a2.discoverDevices([list: [
+        [deviceId: "1", sn: "SN1", model: "DR-HPF008S", deviceName: "Office Fan"],
+        [deviceId: "2", sn: "SN2", model: "DR-HTF004S", deviceName: "Bedroom Fan"],
+    ]], [:])
+    Map rooms = a2.callsNamed("asynchttpGet").last()[3]
+    assert rooms.cb == "discoverRooms" && rooms.data == [page: 1] && rooms.query.pageNo == 1
+    a2.state.discovering = a2.now()
+    a2.discoverRooms([totalPage: 2, familyRooms: [[rooms: [[roomName: "Office", devices: [[sn: "SN1"]]]]]]], [page: 1])
+    assert a2.state.discovering                       // not done yet: page 2 is on its way
+    rooms = a2.callsNamed("asynchttpGet").last()[3]
+    assert rooms.cb == "discoverRooms" && rooms.data == [page: 2] && rooms.query.pageNo == 2
+    a2.discoverRooms([totalPage: 2, familyRooms: [[rooms: [[roomName: "Bedroom", devices: [[sn: "SN2"]]]]]]], [page: 2])
+    h2.settle()
+    assert !a2.state.discovering && a2.state.discovered.SN1.room == "Office" && a2.state.discovered.SN2.room == "Bedroom"
+    // A missing totalPage means one page; a failed page still ends discovery.
+    int gets = a2.callsNamed("asynchttpGet").size()
+    a2.state.discovering = a2.now()
+    a2.discoverRooms([familyRooms: []], [page: 1])
+    assert !a2.state.discovering && a2.callsNamed("asynchttpGet").size() == gets
+    a2.state.discovering = a2.now()
+    a2.discoverRooms(null, [page: 3])
+    assert !a2.state.discovering
+    // Never more than ROOM_PAGES_MAX pages, whatever the list claims.
+    a2.state.discovering = a2.now()
+    a2.discoverRooms([totalPage: 99, familyRooms: []], [page: 10])
+    assert !a2.state.discovering && a2.callsNamed("asynchttpGet").size() == gets
+}
+
+check("humidifier: display and ambient light switch back on at the level they had") {
+    Hub h2 = new Hub(root)
+    def a2 = h2.app()
+    a2.settings.email = "me@example.com"
+    a2.state.emailUsed = "me@example.com"
+    a2.settings.passwordMd5 = "x"
+    a2.state.token = "tok"
+    a2.discoverDevices([list: [[deviceId: "5", sn: "SN5", model: "DR-HHM001S", deviceName: "Humidifier"]]], [:])
+    a2.discoverRooms(null, [:])
+    a2.settings.selectedFans = ["SN5"]
+    a2.updated()
+    h2.settle()
+    FakeDevice hm = a2.getChildDevice("dreo-SN5")
+    FakeDevice c2 = a2.getChildDevice("dreo-connection-${a2.app.id}")
+    c2.webSocketStatus("status: open")
+    h2.settle()
+    a2.fanStateDone([mixed: [poweron: [state: true], mode: [state: 1], rh: [state: 47], rhautolevel: [state: 60],
+        foglevel: [state: 3], ledlevel: [state: 3], rgblevel: [state: 1], connected: [state: true]]], [sn: "SN5"])
+    h2.settle()
+    assert hm.driver.state.ledlevelOn == 3 && hm.driver.state.rgblevelOn == 1
+    Closure lastSent = {
+        new JsonSlurper().parseText(c2.driver.callsNamed("ws.send").collect { it[1] }.findAll { it != "2" }.last()).params
+    }
+    hm.setDisplay("off")
+    h2.settle()
+    assert lastSent() == [ledlevel: 0] && hm.currentValue("display") == "off"
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    h2.settle()
+    assert hm.driver.state.ledlevelOn == 3                // a zero doesn't overwrite the remembered level
+    hm.setDisplay("on")
+    h2.settle()
+    assert lastSent() == [ledlevel: 3] && hm.currentValue("display") == "on"
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    hm.setAmbientLight("off")
+    h2.settle()
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    // The Dreo app changed the level meanwhile: that is what comes back.
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "report", reported: [rgblevel: 2]]))
+    h2.settle()
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "report", reported: [rgblevel: 0]]))
+    h2.settle()
+    hm.setAmbientLight("on")
+    h2.settle()
+    assert lastSent() == [rgblevel: 2]
+    // Settings any device may have.
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "report", reported: [timeroff: [du: 0, ts: 1], scheon: false, lightsensoron: true]]))
+    h2.settle()
+    assert hm.currentValue("timerOff") == 0 && hm.currentValue("schedules") == "off" && hm.currentValue("adaptiveBrightness") == "on"
+    hm.setTimerOff(20)
+    h2.settle()
+    assert lastSent() == [timeroff: 20] && hm.currentValue("timerOff") == 20
+}
+
+check("the half-hourly poll reads devices a few seconds apart") {
+    Hub h2 = new Hub(root)
+    def a2 = h2.app()
+    a2.settings.email = "me@example.com"
+    a2.state.emailUsed = "me@example.com"
+    a2.settings.passwordMd5 = "x"
+    a2.state.token = "tok"
+    a2.discoverDevices([list: [
+        [deviceId: "1", sn: "SN1", model: "DR-HPF008S", deviceName: "A"],
+        [deviceId: "2", sn: "SN2", model: "DR-HTF004S", deviceName: "B"],
+        [deviceId: "3", sn: "SN3", model: "DR-HAF001S", deviceName: "C"],
+    ]], [:])
+    a2.discoverRooms(null, [:])
+    a2.settings.selectedFans = ["SN1", "SN2", "SN3"]
+    a2.updated()
+    h2.settle()
+    int gets = a2.callsNamed("asynchttpGet").size()
+    int timers = a2.callsNamed("runIn").size()
+    a2.pollAll()
+    List states = a2.callsNamed("asynchttpGet").drop(gets).findAll { it[3]?.cb == "fanStateDone" }
+    assert states.collect { it[3].data.sn } == ["SN1"]  // the first straight away
+    List later = a2.callsNamed("runIn").drop(timers).findAll { it[2] == "pollOne" }
+    assert later.collect { [it[1], it[3].data.sn] } == [[2, "SN2"], [4, "SN3"]]
+    assert later.every { it[3].overwrite == false }
+    a2.pollOne(later[0][3].data)
+    assert a2.callsNamed("asynchttpGet").last()[3].data == [sn: "SN2"]
+}
+
 Check.finish()
