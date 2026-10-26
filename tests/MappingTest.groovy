@@ -790,9 +790,11 @@ check("fanLimits: speed range and Mode control from real device lists") {
     // Swapped auto/natural, as the model table says.
     assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HPF025S").controlsConf) ==
         [speedRange: "1-9", modes: "normal=1,auto=2,sleep=3,natural=4,turbo=5"]
-    // Ceiling fans list modes under CFFan: this one has auto 5, not reverse 4.
+    // Ceiling fans list modes under CFFan: this one has auto 5, not reverse 4; its CFAtmosphere control is a light ring.
     assert app.fanLimits(fixtureDevice("hass-dreo", "DR-HCF002S").controlsConf) ==
-        [speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=5"]
+        [speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=5", lightRing: "true"]
+    assert app.fanLimits([control: [[type: "Speed", items: [[value: 1], [value: 9]]], [type: "Other", cmd: "atmon", items: []]]]) ==
+        [speedRange: "1-9", lightRing: "true"]
 }
 
 check("fanLimits: a template reference or junk gives nothing, so the model table applies") {
@@ -861,7 +863,17 @@ check("driversFor: each model's own driver first, then the light children it may
         assert app.driversFor(it) == ["Dreo Ceiling Fan", "Dreo Ceiling Fan Light", "Dreo Fan Light Ring"]
     }
     assert app.driversFor("DR-HHM001S") == ["Dreo Humidifier"]
-    assert app.driversFor("DR-XYZ") == []
+    // A ring found in the device's own controlsConf counts for a model the table doesn't list.
+    assert app.driversFor("DR-HCF001S", [speedRange: "1-12", lightRing: "true"]) == ["Dreo Ceiling Fan", "Dreo Ceiling Fan Light", "Dreo Fan Light Ring"]
+    assert app.driversFor("DR-HTF004S", [speedRange: "1-12"]) == ["Dreo Fan"]
+    // An unknown family is a fan, as profile() treats it: never a null driver name.
+    assert app.driversFor("DR-XYZ") == ["Dreo Fan"]
+}
+
+check("missingDriver: Hubitat's unknown-driver exception and the stand-in's, not other failures") {
+    assert app.missingDriver(new IllegalArgumentException("no driver named Dreo Fan"))
+    assert app.missingDriver(new RuntimeException("Device type 'Dreo Fan' in namespace 'dreo' not found"))
+    assert !app.missingDriver(new IllegalArgumentException("duplicate dni dreo-SN1"))
 }
 
 Check.finish()

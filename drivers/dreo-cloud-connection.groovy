@@ -36,6 +36,9 @@ metadata {
 @Field static final int KEEPALIVE_SECONDS = 15
 // A connect that neither opens nor fails in this long is treated as failed.
 @Field static final int CONNECT_TIMEOUT_S = 30
+// A close notice this soon after a connect is the previous socket's (closed by
+// connect()), even if the new socket has opened meanwhile.
+@Field static final long OLD_CLOSE_GRACE_MS = 3000
 @Field static final long ACK_TIMEOUT_MS = 2000
 @Field static final int MAX_RETRIES = 2
 // Commands still queued after this long (e.g. while reconnecting) are dropped.
@@ -51,8 +54,9 @@ private Map mem() {
     Long id = device.idAsLong
     Map m = MEM.get(id)
     if (m == null) {
-        // phase: null (unknown: new code or a restart), "connecting", "open" or "closed"
-        m = [queue: [], inflight: null, phase: null]
+        // phase: null (unknown: new code or a restart), "connecting", "open" or
+        // "closed". Every change to it happens under synchronized (m).
+        m = [queue: [], inflight: null, phase: null, nextUrl: null]
         MEM.putIfAbsent(id, m)
         m = MEM.get(id)
     }
@@ -92,7 +96,11 @@ private void closeSocket() {
     unschedule("connectTimeout")
     // ackTimeout stays scheduled: it drops (and reports) a command still in
     // flight, which would otherwise block the queue after the reconnect.
-    mem().phase = "closed"   // so the close notice that follows is not taken for a drop
+    Map m = mem()
+    synchronized (m) {
+        m.phase = "closed"   // so the close notice that follows is not taken for a drop
+        m.nextUrl = null
+    }
     try { interfaces.webSocket.close() } catch (e) { /* not open */ }
     sendEvent(name: "connection", value: "disconnected")
 }
@@ -102,10 +110,15 @@ void connect(String url) {
     Map m = mem()
     synchronized (m) {
         if (m.phase == "open") return
-        // An attempt still in progress: don't start a second socket on top of it.
-        if (m.phase == "connecting" && now() - ((m.connectAt ?: 0L) as long) < CONNECT_TIMEOUT_S * 1000L) return
+        if (m.phase == "connecting" && now() - ((m.connectAt ?: 0L) as long) < CONNECT_TIMEOUT_S * 1000L) {
+            // An attempt is in progress: don't start a second socket on top of
+            // it. Should it fail, this newer URL (e.g. a fresh sign-in) is tried next.
+            m.nextUrl = url
+            return
+        }
         m.phase = "connecting"
         m.connectAt = now()
+        m.nextUrl = null
     }
     state.wanted = true
     sendEvent(name: "connection", value: "connecting")
@@ -129,29 +142,61 @@ def connectTimeout() {
 
 def webSocketStatus(String status) {
     logDebug "Status: ${status}"
+    Map m = mem()
     if (status.startsWith("status: open")) {
-        mem().phase = "open"
-        unschedule("connectTimeout")
-        state.failures = 0
-        sendEvent(name: "connection", value: "connected")
-        log.info "Dreo cloud connected"
-        keepAlive()
-        parent?.wsOpened()
-        sendNext()
-    } else if (status.startsWith("status: closing") && mem().phase == "connecting") {
-        logDebug "Ignored a close notice while connecting: it is the previous socket's"
+        String was
+        synchronized (m) {
+            was = m.phase
+            if (was == "connecting" || was == null) m.phase = "open"
+        }
+        if (was == "open") return
+        if (was == "closed") {
+            // Given up meanwhile (disconnect, reconnect or the connect timeout): not wanted.
+            logDebug "Closing a socket that opened after it was given up"
+            try { interfaces.webSocket.close() } catch (e) { /* already closed */ }
+            return
+        }
+        opened(was == null ? "Took over the open socket after new code" : null)
+    } else if (status.startsWith("status: closing") && oldSocketsClose(m)) {
+        logDebug "Ignored a close notice: it is the previous socket's"
     } else if (status.startsWith("failure:") || status.startsWith("status: closing")) {
         socketDown(status)
     }
 }
 
+/**
+ * Whether a close notice now is the previous socket's, closed by connect():
+ * while the new one is connecting, or just after it opened (Hubitat may
+ * deliver the old notice late).
+ */
+private boolean oldSocketsClose(Map m) {
+    synchronized (m) {
+        if (m.phase == "connecting") return true
+        return m.phase == "open" && now() - ((m.connectAt ?: 0L) as long) < OLD_CLOSE_GRACE_MS
+    }
+}
+
+/** The socket is open (phase already set): resume normal service and tell the app. */
+private void opened(String note) {
+    unschedule("connectTimeout")
+    state.failures = 0
+    sendEvent(name: "connection", value: "connected")
+    if (note) logDebug note else log.info "Dreo cloud connected"
+    keepAlive()
+    parent?.wsOpened()
+    sendNext()
+}
+
 /** The socket dropped or failed to open: tell the app, which schedules a reconnect. */
 private void socketDown(String reason) {
     Map m = mem()
+    String nextUrl
     synchronized (m) {
         // A failure is often followed by a "closing" status: handle only the first.
         if (m.phase == "closed") return
         m.phase = "closed"
+        nextUrl = m.nextUrl
+        m.nextUrl = null
     }
     unschedule("keepAlive")
     unschedule("connectTimeout")
@@ -159,6 +204,12 @@ private void socketDown(String reason) {
     try { interfaces.webSocket.close() } catch (e) { /* already closed */ }
     sendEvent(name: "connection", value: "disconnected")
     if (state.wanted == false) return
+    if (nextUrl) {
+        // A newer URL arrived during the failed attempt: no need to wait for the app's retry.
+        logDebug "Connect failed (${reason}); trying the newer URL"
+        connect(nextUrl)
+        return
+    }
     state.failures = (state.failures ?: 0) + 1
     parent?.wsClosed(reason, state.failures as int)
 }
@@ -181,14 +232,13 @@ def parse(String text) {
     // Anything from Dreo shows the link is alive (see ackTimeout).
     Map m = mem()
     m.lastRx = now()
-    if (m.phase == null) {
+    boolean tookOver
+    synchronized (m) {
         // New driver code emptied MEM while the socket stayed up: carry on with it.
-        m.phase = "open"
-        sendEvent(name: "connection", value: "connected")
-        logDebug "Took over the open socket after new code"
-        keepAlive()
-        sendNext()
+        tookOver = m.phase == null
+        if (tookOver) m.phase = "open"
     }
+    if (tookOver) opened("Took over the open socket after new code")
     Map msg
     try {
         def j = new JsonSlurper().parseText(text)
@@ -258,7 +308,9 @@ void sendCommand(String sn, Map params) {
     // Commands that wait too long for the socket are dropped and reported
     // even if it never reopens.
     runIn((int) (COMMAND_MAX_AGE_MS / 1000) + 1, "expireQueue")
-    if (device.currentValue("connection") != "connecting") parent?.connectSocket()
+    // Ask the app for a socket unless one is on its way. After new code the
+    // phase is unknown: connect() then replaces whatever socket is there.
+    if (m.phase != "connecting") parent?.connectSocket()
 }
 
 /** Drop queued commands older than COMMAND_MAX_AGE_MS and tell the app, so the fan is re-read. */

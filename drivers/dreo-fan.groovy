@@ -20,6 +20,11 @@ import groovy.transform.Field
 // Release version; the app compares it with its own (see dreoHello).
 @Field static final String DRIVER_VERSION = "0.3.0"
 
+// Child drivers by DNI suffix.
+@Field static final Map CHILD_DRIVERS = [ring: "Dreo Fan Light Ring"]
+// Names children were created with before 0.3 -> today's (renamed on Done, see dreoHello).
+@Field static final Map OLD_CHILD_NAMES = ["Dreo Light Ring": "Dreo Fan Light Ring"]
+
 metadata {
     definition(name: "Dreo Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-fan.groovy") {
         capability "Actuator"
@@ -209,21 +214,36 @@ private void emit(Map e) {
 
 private void childEvent(Map e) {
     String kind = e.child
-    String dni = "${device.deviceNetworkId}-${kind}"
-    def cd = getChildDevice(dni)
-    if (cd && cd.name == "Dreo Light Ring") {
-        try { cd.setName("Dreo Fan Light Ring") } catch (ignored) { }   // named before 0.3
-    }
-    if (!cd) {
-        try {
-            cd = addChildDevice("dreo", "Dreo Fan Light Ring", dni, [name: "Dreo Fan Light Ring", label: "${device.displayName} Light Ring", isComponent: true])
-        } catch (ex) {
-            log.error "Could not add the light ring device: ${ex.message} (is the 'Dreo Fan Light Ring' driver installed?)"
-            return
+    def cd = getChildDevice("${device.deviceNetworkId}-${kind}".toString()) ?: addChild(kind)
+    if (cd) cd.parse([e.findAll { k, v -> k != "child" }])
+}
+
+/**
+ * Create a light child. If its driver isn't installed, null: logged once and
+ * noted in the `missingDrivers` data value, which the app shows; every report
+ * tries again, so the child appears as soon as the driver is pasted in.
+ */
+private def addChild(String kind) {
+    String driver = CHILD_DRIVERS[kind]
+    String label = kind == "ring" ? "Light Ring" : "Light"
+    List missing = (device.getDataValue("missingDrivers") ?: "").split(", ").findAll { it }
+    try {
+        def cd = addChildDevice("dreo", driver, "${device.deviceNetworkId}-${kind}".toString(),
+            [name: driver, label: "${device.displayName} ${label}", isComponent: true])
+        if (driver in missing) noteMissing(missing - driver)
+        return cd
+    } catch (ex) {
+        if (!(driver in missing)) {
+            noteMissing(missing + driver)
+            log.error "Could not add the ${label.toLowerCase()} device: ${ex.message} (is the '${driver}' driver installed?)"
         }
+        return null
     }
-    Map evt = e.findAll { k, v -> k != "child" }
-    cd.parse([evt])
+}
+
+private void noteMissing(List drivers) {
+    if (drivers) device.updateDataValue("missingDrivers", drivers.join(", "))
+    else device.removeDataValue("missingDrivers")
 }
 
 private void logDebug(String msg) {
@@ -240,6 +260,10 @@ List dreoHello(String appVersion) {
     device.updateDataValue("driverVersion", DRIVER_VERSION)
     List odd = DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
     getChildDevices().each { c ->
+        // A child created before 0.3 takes today's driver name.
+        if (c.name in OLD_CHILD_NAMES.keySet()) {
+            try { c.setName(OLD_CHILD_NAMES[c.name]) } catch (ignored) { }
+        }
         try {
             odd.addAll(c.dreoHello(appVersion) ?: [])
         } catch (e) {

@@ -72,8 +72,8 @@ on the device's label and in the Dreo app under the device's settings):
 If unsure, install them all: an unused driver does nothing. Another fan with
 a light ring creates a Dreo Fan Light Ring device too, so add that driver if a fan
 not listed above has one. **Choose devices** in the app lists the drivers the
-ticked devices need, and the app's main page names any device it couldn't add
-because its driver is missing.
+ticked devices need, and the app's main page names any device, or light
+child of a fan, it couldn't add because its driver is missing.
 
 ### Hubitat Package Manager
 

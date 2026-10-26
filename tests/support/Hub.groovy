@@ -248,6 +248,7 @@ class FakeDevice {
     String getDisplayName() { label ?: name }
     String getDataValue(String k) { data[k] }
     void updateDataValue(String k, def v) { data[k] = v?.toString() }
+    void removeDataValue(String k) { data.remove(k) }
     def currentValue(String attr, boolean skipCache = false) { current[attr] }
 
     void applyEvent(Map e) {

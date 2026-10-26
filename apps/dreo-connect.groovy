@@ -218,9 +218,10 @@ def mainPage() {
         if (settings.email && passwordHash()) {
             section("Devices") {
                 href "fansPage", title: "Choose devices", description: selectedSummary()
-                if (state.missingDrivers) {
-                    paragraph "<b>Not added, driver missing:</b> ${state.missingDrivers.join('; ')}. Install " +
-                        "it (Hubitat Package Manager's Modify, or paste it into Drivers Code), then press Done."
+                List notAdded = (state.missingDrivers ?: []) + missingChildDrivers()
+                if (notAdded) {
+                    paragraph "<b>Not added:</b> ${notAdded.join('; ')}. Install a missing driver (Hubitat " +
+                        "Package Manager's Modify, or paste it into Drivers Code), then press Done."
                 }
                 getFanDevices().each { cd ->
                     def what = cd.getDataValue("kind") == "humidifier"
@@ -295,7 +296,7 @@ private String driversNote(Map found, List selected) {
     Map uses = [:]
     selected.each { String sn ->
         Map f = found[sn]
-        if (f) driversFor(f.model as String).each { String d -> uses.get(d, []) << f.name }
+        if (f) driversFor(f.model as String, f.limits as Map).each { String d -> uses.get(d, []) << f.name }
     }
     if (!uses) return null
     String list = uses.collect { d, names -> "<li><b>${d}</b>: ${names.join(', ')}</li>" }.join("")
@@ -393,15 +394,17 @@ private void syncChildren() {
         Map f = found[sn]
         if (!f) return
         String kind = kindOf(f.model)
-        String driver = driversFor(f.model as String)[0]
+        String driver = driversFor(f.model as String, f.limits as Map)[0]
         try {
             // Data values go in with the device: its installed() runs inside addChildDevice.
             addChildDevice("dreo", driver, fanDni(sn), [name: f.series ?: f.model, label: f.name, isComponent: false,
                 data: [sn: sn, model: f.model, kind: kind] + (f.limits ?: [:])])
             log.info "Dreo: added ${f.name} (${f.model})"
         } catch (e) {
-            missing << "${f.name} needs '${driver}'".toString()
-            log.error "Dreo: could not add ${f.name}: ${e.message} (is the '${driver}' driver installed?)"
+            // A driver that isn't installed is the usual cause, but not the only one.
+            boolean noDriver = missingDriver(e)
+            missing << (noDriver ? "${f.name} needs '${driver}'" : "${f.name} could not be added (${e.message})").toString()
+            log.error "Dreo: could not add ${f.name}: ${e.message}" + (noDriver ? " (is the '${driver}' driver installed?)" : "")
         }
     }
     state.missingDrivers = missing
@@ -418,6 +421,18 @@ private void syncChildren() {
         } catch (e) {
             log.error "Dreo: could not add the cloud connection device: ${e.message} (is the 'Dreo Cloud Connection' driver installed?)"
         }
+    }
+}
+
+/** Whether addChildDevice failed because the driver isn't installed (Hubitat's UnknownDeviceTypeException). */
+private boolean missingDriver(Throwable e) {
+    return e.class.simpleName == "UnknownDeviceTypeException" || (e.message ?: "") ==~ /(?i).*(not found|no driver).*/
+}
+
+/** Light children a fan could not add because their driver is missing (the fan records it in `missingDrivers`). */
+private List missingChildDrivers() {
+    return getFanDevices().findAll { it.getDataValue("missingDrivers") }.collect { cd ->
+        "${cd.displayName} needs ${cd.getDataValue('missingDrivers').split(', ').collect { "'${it}'" }.join(' and ')}".toString()
     }
 }
 
@@ -1107,14 +1122,15 @@ private String kindOf(String model) {
 
 /**
  * The drivers a model's devices use: the device's own driver first, then the
- * light children it may create (a ceiling fan's light, a light ring).
+ * light children it may create (a ceiling fan's light, a light ring). A light
+ * ring shows in the device's controlsConf (`limits`, as fanLimits stores it)
+ * or in the model table. An unknown family is a fan, as in profile().
  */
-private List driversFor(String model) {
+private List driversFor(String model, Map limits = null) {
     String kind = kindOf(model)
-    if (!kind) return []
     List d = [kind == "ceiling" ? "Dreo Ceiling Fan" : kind == "humidifier" ? "Dreo Humidifier" : "Dreo Fan"]
     if (kind == "ceiling") d << "Dreo Ceiling Fan Light"
-    if (MODELS[model]?.ring) d << "Dreo Fan Light Ring"
+    if (limits?.lightRing || MODELS[model]?.ring) d << "Dreo Fan Light Ring"
     return d
 }
 
@@ -1165,7 +1181,8 @@ private Map profile(String model, Map s, Map opts, Map conf = [:]) {
 
 /**
  * Speed range and modes from a fan's controlsConf in the device list, as
- * device data values: speedRange "1-9", modes "normal=1,natural=2,...". Many
+ * device data values: speedRange "1-9", modes "normal=1,natural=2,...", and
+ * lightRing "true" where the controls include a light ring (atm* keys). Many
  * models get only a template reference ({template: ...}); then nothing is
  * returned and the model table applies. Per hass-dreo's parse_speed_range and
  * parse_preset_modes, except that the main control comes before extraConfigs.
@@ -1212,6 +1229,9 @@ Map fanLimits(def conf, String model = null) {
         scheduled.each { add(it[0], it[1]) }
     }
     if (modes) out.modes = modes.sort { it[1] }.collect { "${it[0]}=${it[1]}" }.join(",")
+    // A light ring is a control whose command is an atm* key (CFAtmosphere on ceiling fans).
+    List all = (conf.control instanceof List ? conf.control : []) + extra
+    if (all.any { it instanceof Map && ("${it.cmd}".startsWith("atm") || "${it.type}".toLowerCase().contains("atmosphere")) }) out.lightRing = "true"
     return out
 }
 
