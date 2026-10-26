@@ -257,6 +257,7 @@ check("unacknowledged command: two retries, then refresh and reconnect") {
 }
 
 check("ack must mention a key that was sent: a button-press report doesn't count") {
+    conn().connect("wss://x")
     conn().webSocketStatus("status: open")
     hub.settle()
     int from = conn().driver.callsNamed("ws.send").size()
@@ -471,7 +472,8 @@ check("cloud connection down for 2 minutes: every device offline until it reconn
     assert app.callsNamed("runIn").find { it[2] == "cloudCheck" }?.get(1) == 120
     // A short drop changes nothing.
     hub.advance(60000)
-    conn().webSocketStatus("status: open")  // (pretend the reconnect worked)
+    conn().connect("wss://x")               // (pretend the reconnect worked)
+    conn().webSocketStatus("status: open")
     hub.settle()
     hub.advance(61000)
     app.cloudCheck()
@@ -822,8 +824,35 @@ check("Done notes a device whose driver isn't installed, and clears it once it i
 
 /** Calls made by the connection driver since `from`, by name. */
 List connCalls(int from) { conn().driver.calls.drop(from).collect { it[0] } }
+Map connMem() { conn().driver.getClass().MEM[conn().idAsLong] }
+/** Drops reported to the app so far. */
+int drops() { app.log.at("info").count { it.contains("cloud connection closed") } }
+int polls() { app.callsNamed("runIn").count { it[2] == "pollAll" } }
+
+/**
+ * Every check below starts from the same place, whatever the earlier checks
+ * left: a socket the app wants, just connected and opened, and past the grace
+ * for the old socket's close notice.
+ */
+void opened() {
+    conn().driver.getClass().MEM.remove(conn().idAsLong)
+    conn().connect("wss://x")
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    hub.advance(3000)
+    assert conn().currentValue("connection") == "connected" && connMem().phase == "open"
+}
+
+/** From opened(): the socket has dropped and the app's reconnect is pending. */
+void dropped() {
+    opened()
+    conn().webSocketStatus("failure: connection reset")
+    hub.settle()
+    assert conn().currentValue("connection") == "disconnected"
+}
 
 check("connect always closes any old socket first, even after new code emptied the driver's memory") {
+    opened()
     conn().driver.getClass().MEM.clear()          // new code or a restart: phase unknown, socket maybe open
     int from = conn().driver.calls.size()
     conn().connect("wss://x")
@@ -832,18 +861,63 @@ check("connect always closes any old socket first, even after new code emptied t
     assert conn().driver.callsNamed("runIn").last()[1..2] == [30, "connectTimeout"]
 }
 
-check("the old socket's close notice during a connect is ignored; the new socket then opens normally") {
-    int closed = app.callsNamed("runIn").count { it[2] == "connectSocket" }
+check("the old socket's close notice is ignored while connecting; the new socket's own then counts") {
+    opened()
+    conn().driver.getClass().MEM.clear()
+    conn().connect("wss://x")
+    int before = drops()
     conn().webSocketStatus("status: closing")
     hub.settle()
     assert conn().currentValue("connection") == "connecting"
-    assert app.callsNamed("runIn").count { it[2] == "connectSocket" } == closed, "no reconnect scheduled"
+    assert drops() == before, "no reconnect scheduled"
     conn().webSocketStatus("status: open")
     hub.settle()
     assert conn().currentValue("connection") == "connected"
+    conn().webSocketStatus("status: closing")      // the old one's was used up: this is the new socket's
+    hub.settle()
+    assert conn().currentValue("connection") == "disconnected" && drops() == before + 1
+}
+
+check("the old socket's close notice delivered just after the new socket opened is ignored, once") {
+    opened()
+    conn().driver.getClass().MEM.clear()           // new code: connect() closes the live socket first
+    conn().connect("wss://x")
+    hub.settle()
+    int before = drops()
+    conn().webSocketStatus("status: open")
+    conn().webSocketStatus("status: closing")      // the old socket's notice, delivered late
+    hub.settle()
+    assert conn().currentValue("connection") == "connected" && drops() == before
+    conn().webSocketStatus("status: closing")      // a second one can only be the new socket's
+    hub.settle()
+    assert conn().currentValue("connection") == "disconnected" && drops() == before + 1
+}
+
+check("with nothing to close, a close right after the open is the new socket's: a drop, not ignored") {
+    dropped()                                      // the failed socket is closed and gone
+    conn().connect("wss://x")
+    int before = drops()
+    conn().webSocketStatus("status: open")
+    conn().webSocketStatus("status: closing")      // e.g. Dreo rejecting the token after the handshake
+    hub.settle()
+    assert conn().currentValue("connection") == "disconnected" && drops() == before + 1
+}
+
+check("new code while a connect was out: the open is taken, and the old socket's late close notice ignored") {
+    opened()
+    conn().connect("wss://x")                      // closes the live socket, opens a new one
+    conn().driver.getClass().MEM.clear()           // driver code saved meanwhile
+    int before = drops()
+    conn().webSocketStatus("status: open")
+    hub.settle()
+    assert conn().currentValue("connection") == "connected" && connMem().phase == "open"
+    conn().webSocketStatus("status: closing")      // the socket connect() closed
+    hub.settle()
+    assert conn().currentValue("connection") == "connected" && drops() == before
 }
 
 check("a connect while connected, or while another is in progress, opens nothing new") {
+    opened()
     int from = conn().driver.calls.size()
     conn().connect("wss://x")
     assert !connCalls(from).contains("ws.connect")
@@ -855,50 +929,128 @@ check("a connect while connected, or while another is in progress, opens nothing
     assert !connCalls(from).contains("ws.connect")
 }
 
-check("a failure closes the socket and is reported once, even with a close notice after it") {
-    conn().webSocketStatus("status: open")
+check("a connect asked for during another attempt opens nothing; the attempt's failure is reported as usual") {
+    dropped()
+    conn().connect("wss://a")
+    int from = conn().driver.calls.size()
+    conn().connect("wss://b")                      // e.g. Done while the first attempt is still out
+    assert !connCalls(from).contains("ws.connect")
+    int before = drops()
+    conn().connectTimeout()
     hub.settle()
-    int reports = app.log.at("info").count { it.contains("cloud connection closed") }
+    assert conn().currentValue("connection") == "disconnected"
+    assert drops() == before + 1, "counted and backed off like any failure"
+    assert app.callsNamed("runIn").last()[2] == "connectSocket", "the app's reconnect builds a URL from the current token"
+}
+
+check("a failure closes the socket and is reported once, even with a close notice after it") {
+    opened()
+    int before = drops()
     int from = conn().driver.calls.size()
     conn().webSocketStatus("failure: connection reset")
     conn().webSocketStatus("status: closing")
     hub.settle()
     assert connCalls(from).contains("ws.close"), "the failed socket is released"
-    assert app.log.at("info").count { it.contains("cloud connection closed") } == reports + 1
+    assert drops() == before + 1
 }
 
-check("a connect that never answers times out and is handled as a drop") {
+check("a connect that never answers times out and is handled as a drop; an answer after that is closed again") {
+    dropped()
     conn().connect("wss://x")
     hub.settle()
-    int reports = app.log.at("info").count { it.contains("cloud connection closed") }
+    int before = drops()
     conn().connectTimeout()
     hub.settle()
     assert conn().currentValue("connection") == "disconnected"
     assert app.log.at("info").last().contains("no answer from Dreo in 30 s")
-    assert app.log.at("info").count { it.contains("cloud connection closed") } == reports + 1
+    assert drops() == before + 1
+    int from = conn().driver.calls.size()
+    int polled = polls()
+    conn().webSocketStatus("status: open")         // Dreo answered after all
+    hub.settle()
+    assert connCalls(from).contains("ws.close")
+    assert conn().currentValue("connection") == "disconnected" && connMem().phase == "closed"
+    assert !conn().driver.calls.drop(from).any { it[0] == "runIn" && it[2] == "keepAlive" }
+    assert polls() == polled
 }
 
-check("new code with the socket still up: incoming data takes it over instead of leaving it idle") {
+check("disconnect while a connect is still out: the socket is closed when it opens, not kept") {
+    dropped()
     conn().connect("wss://x")
+    conn().disconnect()
+    hub.settle()
+    int from = conn().driver.calls.size()
+    int polled = polls()
     conn().webSocketStatus("status: open")
+    hub.settle()
+    assert connCalls(from).contains("ws.close")
+    assert conn().currentValue("connection") == "disconnected"
+    assert polls() == polled
+    assert conn().driver.state.wanted == false
+}
+
+check("new code with the socket still up: incoming data takes it over, with the app told as on an open") {
+    opened()
+    conn().driver.state.failures = 2
     hub.settle()
     conn().driver.getClass().MEM.clear()
     int from = conn().driver.callsNamed("ws.send").size()
+    int polled = polls()
     ws([devicesn: "SN1", method: "report", reported: [windlevel: 3]])
-    assert conn().driver.getClass().MEM[conn().idAsLong].phase == "open"
+    assert connMem().phase == "open"
     assert conn().currentValue("connection") == "connected"
     assert conn().driver.callsNamed("ws.send").drop(from)*.getAt(1).contains("2"), "keepalive running again"
+    assert conn().driver.state.failures == 0
+    assert polls() == polled + 1
 }
 
-check("a light ring created before 0.3 gets today's name on the fan's next update") {
+check("a command after new code asks for a socket, even while the attribute still says connecting") {
+    dropped()
+    conn().connect("wss://x")                      // attribute: connecting
+    conn().driver.getClass().MEM.clear()           // new code during the attempt
+    int from = conn().driver.calls.size()
+    app.state.token = "tok"                        // (an earlier check dropped it)
+    conn().sendCommand("SN1", [poweron: true])
+    hub.settle()
+    assert connCalls(from).contains("ws.connect")
+    assert connMem().phase == "connecting"
+}
+
+// ---- light children and their drivers
+
+check("a light ring created before 0.3 gets today's name on Done") {
     app.settings.selectedFans = ["SN1"]
     app.updated()
     hub.settle()
     ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
     FakeDevice ring = child("dreo-SN1").driver.getChildDevice("dreo-SN1-ring")
     ring.name = "Dreo Light Ring"                  // as created by 0.2
-    ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
+    app.updated()
+    hub.settle()
     assert ring.name == "Dreo Fan Light Ring"
+}
+
+check("a fan whose light ring driver is missing says so once, and on the app's page, until Done after it is installed") {
+    FakeDevice f = child("dreo-SN1")
+    f.driver.deleteChildDevice("dreo-SN1-ring")
+    File saved = hub.driverFiles.remove("Dreo Fan Light Ring")
+    int errors = app.log.at("error").size()
+    int adds = f.driver.callsNamed("addChildDevice").size()
+    ws([devicesn: "SN1", method: "report", reported: [atmon: true, atmbri: 2]])
+    ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
+    assert app.log.at("error").size() == errors + 1, "logged once, not on every report"
+    assert app.log.at("error").last().contains("could not add the 'Dreo Fan Light Ring' device for Office Fan")
+    assert f.getDataValue("missingDrivers") == "Dreo Fan Light Ring"
+    assert app.missingChildDrivers() == ["Office Fan needs 'Dreo Fan Light Ring'"]
+    hub.driverFiles["Dreo Fan Light Ring"] = saved
+    ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
+    assert !f.driver.getChildDevice("dreo-SN1-ring"), "not tried again until Done"
+    assert f.driver.callsNamed("addChildDevice").size() == adds
+    app.updated()                                  // Done
+    hub.settle()
+    assert !f.getDataValue("missingDrivers") && app.missingChildDrivers() == []
+    ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
+    assert f.driver.getChildDevice("dreo-SN1-ring")
 }
 
 Check.finish()

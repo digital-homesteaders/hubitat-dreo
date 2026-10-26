@@ -47,9 +47,7 @@ metadata {
 }
 
 // Child drivers by DNI suffix.
-@groovy.transform.Field static final Map CHILD_DRIVERS = [light: "Dreo Ceiling Fan Light", ring: "Dreo Fan Light Ring"]
-// Names children were created with before 0.3 -> today's.
-@groovy.transform.Field static final Map OLD_CHILD_NAMES = ["Dreo Ceiling Light": "Dreo Ceiling Fan Light", "Dreo Light Ring": "Dreo Fan Light Ring"]
+@Field static final Map CHILD_DRIVERS = [light: "Dreo Ceiling Fan Light", ring: "Dreo Fan Light Ring"]
 
 // ---------------------------------------------------------------- lifecycle
 
@@ -147,23 +145,24 @@ private void emit(Map e) {
 
 private void childEvent(Map e) {
     String kind = e.child
-    String dni = "${device.deviceNetworkId}-${kind}"
-    def cd = getChildDevice(dni)
-    if (cd && cd.name in OLD_CHILD_NAMES.keySet()) {
-        try { cd.setName(OLD_CHILD_NAMES[cd.name]) } catch (ignored) { }   // named before 0.3
+    def cd = getChildDevice("${device.deviceNetworkId}-${kind}".toString()) ?: addChild(kind)
+    if (cd) cd.parse([e.findAll { k, v -> k != "child" }])
+}
+
+/**
+ * Create a light child, unless the app has noted its driver missing: the app
+ * logs that once and clears it on Done, so the next report tries again.
+ */
+private def addChild(String kind) {
+    String driver = CHILD_DRIVERS[kind]
+    if (parent.lightDriverMissing(device, driver)) return null
+    try {
+        return addChildDevice("dreo", driver, "${device.deviceNetworkId}-${kind}".toString(),
+            [name: driver, label: "${device.displayName} ${kind == 'ring' ? 'Light Ring' : 'Light'}", isComponent: true])
+    } catch (ex) {
+        parent.lightDriverFailed(device, driver, ex.message)
+        return null
     }
-    if (!cd) {
-        String driver = CHILD_DRIVERS[kind]
-        String label = kind == "ring" ? "Light Ring" : "Light"
-        try {
-            cd = addChildDevice("dreo", driver, dni, [name: driver, label: "${device.displayName} ${label}", isComponent: true])
-        } catch (ex) {
-            log.error "Could not add the ${label.toLowerCase()} device: ${ex.message} (is the '${driver}' driver installed?)"
-            return
-        }
-    }
-    Map evt = e.findAll { k, v -> k != "child" }
-    cd.parse([evt])
 }
 
 private void logDebug(String msg) {
@@ -179,12 +178,6 @@ void logsOff() {
 List dreoHello(String appVersion) {
     device.updateDataValue("driverVersion", DRIVER_VERSION)
     List odd = DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
-    getChildDevices().each { c ->
-        try {
-            odd.addAll(c.dreoHello(appVersion) ?: [])
-        } catch (e) {
-            odd << "${c.displayName} (older)".toString()
-        }
-    }
+    getChildDevices().each { c -> odd.addAll(parent.lightHello(c, appVersion)) }
     return odd
 }

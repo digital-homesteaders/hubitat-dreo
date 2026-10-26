@@ -20,6 +20,9 @@ import groovy.transform.Field
 // Release version; the app compares it with its own (see dreoHello).
 @Field static final String DRIVER_VERSION = "0.3.0"
 
+// Child drivers by DNI suffix.
+@Field static final Map CHILD_DRIVERS = [ring: "Dreo Fan Light Ring"]
+
 metadata {
     definition(name: "Dreo Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-fan.groovy") {
         capability "Actuator"
@@ -209,21 +212,24 @@ private void emit(Map e) {
 
 private void childEvent(Map e) {
     String kind = e.child
-    String dni = "${device.deviceNetworkId}-${kind}"
-    def cd = getChildDevice(dni)
-    if (cd && cd.name == "Dreo Light Ring") {
-        try { cd.setName("Dreo Fan Light Ring") } catch (ignored) { }   // named before 0.3
+    def cd = getChildDevice("${device.deviceNetworkId}-${kind}".toString()) ?: addChild(kind)
+    if (cd) cd.parse([e.findAll { k, v -> k != "child" }])
+}
+
+/**
+ * Create a light child, unless the app has noted its driver missing: the app
+ * logs that once and clears it on Done, so the next report tries again.
+ */
+private def addChild(String kind) {
+    String driver = CHILD_DRIVERS[kind]
+    if (parent.lightDriverMissing(device, driver)) return null
+    try {
+        return addChildDevice("dreo", driver, "${device.deviceNetworkId}-${kind}".toString(),
+            [name: driver, label: "${device.displayName} ${kind == 'ring' ? 'Light Ring' : 'Light'}", isComponent: true])
+    } catch (ex) {
+        parent.lightDriverFailed(device, driver, ex.message)
+        return null
     }
-    if (!cd) {
-        try {
-            cd = addChildDevice("dreo", "Dreo Fan Light Ring", dni, [name: "Dreo Fan Light Ring", label: "${device.displayName} Light Ring", isComponent: true])
-        } catch (ex) {
-            log.error "Could not add the light ring device: ${ex.message} (is the 'Dreo Fan Light Ring' driver installed?)"
-            return
-        }
-    }
-    Map evt = e.findAll { k, v -> k != "child" }
-    cd.parse([evt])
 }
 
 private void logDebug(String msg) {
@@ -239,12 +245,6 @@ void logsOff() {
 List dreoHello(String appVersion) {
     device.updateDataValue("driverVersion", DRIVER_VERSION)
     List odd = DRIVER_VERSION == appVersion ? [] : ["${device.displayName} (${DRIVER_VERSION})".toString()]
-    getChildDevices().each { c ->
-        try {
-            odd.addAll(c.dreoHello(appVersion) ?: [])
-        } catch (e) {
-            odd << "${c.displayName} (older)".toString()
-        }
-    }
+    getChildDevices().each { c -> odd.addAll(parent.lightHello(c, appVersion)) }
     return odd
 }
