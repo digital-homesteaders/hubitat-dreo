@@ -18,6 +18,7 @@
  */
 
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -450,23 +451,40 @@ private boolean missingDriver(Throwable e) {
 
 // Names light children were created with before 0.3 -> today's (see lightHello).
 @Field static final Map OLD_CHILD_NAMES = ["Dreo Ceiling Light": "Dreo Ceiling Fan Light", "Dreo Light Ring": "Dreo Fan Light Ring"]
+// Light child drivers and labels by the child's DNI suffix (the `child` key of dreoEvents).
+@Field static final Map LIGHT_CHILDREN = [light: [driver: "Dreo Ceiling Fan Light", label: "Light"], ring: [driver: "Dreo Fan Light Ring", label: "Light Ring"]]
 
-/** Whether a fan's light child driver has been found missing since the last Done (see lightDriverFailed). */
-boolean lightDriverMissing(cd, String driver) {
-    return driver in missingLightDrivers(cd)
+/**
+ * The light child a fan should add for `kind` ("light" or "ring"): its driver,
+ * DNI and label. Null while adding it has failed since the last Done (see
+ * lightChildFailed). The fan driver adds it, since only a device can add its
+ * own children.
+ */
+Map lightChild(cd, String kind) {
+    Map c = LIGHT_CHILDREN[kind]
+    if (!c || childFailures(cd).containsKey(c.driver)) return null
+    return [driver: c.driver, dni: "${cd.deviceNetworkId}-${kind}".toString(), label: "${cd.displayName} ${c.label}".toString()]
 }
 
 /**
  * A fan could not add a light child: logged once and noted in the fan's
- * `missingDrivers` data value, which the main page shows. Done clears the
+ * `childFailures` data value, which the main page shows. Done clears the
  * note (checkDrivers), so the fan's next report tries again.
  */
-void lightDriverFailed(cd, String driver, String message) {
-    List missing = missingLightDrivers(cd)
-    if (driver in missing) return
-    cd.updateDataValue("missingDrivers", (missing + driver).join(", "))
-    log.error "Dreo: could not add the '${driver}' device for ${cd.displayName}: ${message} (is the driver installed? Install it, then press Done)"
+void lightChildFailed(cd, String driver, Throwable e) {
+    Map failures = childFailures(cd)
+    if (failures.containsKey(driver)) return
+    boolean noDriver = missingDriver(e)
+    // "" for a missing driver, else what went wrong.
+    failures[driver] = noDriver ? "" : (e.message ?: e.class.simpleName)
+    cd.updateDataValue("childFailures", JsonOutput.toJson(failures))
+    log.error "Dreo: could not add the '${driver}' device for ${cd.displayName}: ${e.message}" +
+        (noDriver ? " (is the driver installed? Install it, then press Done)" : " (press Done to try again)")
 }
+
+// Fan drivers from before lightChild call these until they are re-pasted.
+boolean lightDriverMissing(cd, String driver) { childFailures(cd).containsKey(driver) }
+void lightDriverFailed(cd, String driver, String message) { lightChildFailed(cd, driver, new Exception(message)) }
 
 /** A fan's light child on Done: a pre-0.3 name is updated, and its driver version checked like the fan's. */
 List lightHello(c, String appVersion) {
@@ -480,14 +498,23 @@ List lightHello(c, String appVersion) {
     }
 }
 
-private List missingLightDrivers(cd) {
-    return (cd.getDataValue("missingDrivers") ?: "").split(", ").findAll { it }
+/** A fan's light children that couldn't be added since the last Done: driver -> error ("" for a missing driver). */
+private Map childFailures(cd) {
+    String v = cd.getDataValue("childFailures")
+    try {
+        def m = v ? new JsonSlurper().parseText(v) : null
+        return m instanceof Map ? m : [:]
+    } catch (e) {
+        return [:]
+    }
 }
 
 /** The main page's entries for light children that couldn't be added. */
 private List missingChildDrivers() {
-    return getFanDevices().findAll { it.getDataValue("missingDrivers") }.collect { cd ->
-        "${cd.displayName} needs ${missingLightDrivers(cd).collect { "'${it}'" }.join(' and ')}".toString()
+    return getFanDevices().collectMany { cd ->
+        childFailures(cd).collect { d, err ->
+            (err ? "${cd.displayName} could not add '${d}' (${err})" : "${cd.displayName} needs '${d}'").toString()
+        }
     }
 }
 
@@ -529,8 +556,11 @@ String dreoVersion() { VERSION }
  * children). A driver too old to answer is from an earlier version too.
  */
 private void checkDrivers() {
-    // A light driver noted missing is tried again after Done (see lightDriverFailed).
-    getFanDevices().each { if (it.getDataValue("missingDrivers")) it.removeDataValue("missingDrivers") }
+    // A light child that failed is tried again after Done (see lightChildFailed);
+    // missingDrivers is the note's older name.
+    getFanDevices().each { cd ->
+        ["childFailures", "missingDrivers"].each { if (cd.getDataValue(it)) cd.removeDataValue(it) }
+    }
     List odd = []
     getChildDevices().each { cd ->
         try {
@@ -605,7 +635,7 @@ private Map apiHeaders() {
 private void apiGet(String path, Map query, String callback, Map cbData = [:], boolean retried = false) {
     Map req = [path: path, query: query ?: [:], cb: callback, data: cbData, retried: retried]
     if (!currentToken()) {
-        login("apiReplay", req)
+        login("apiReplay", req, "apiFailed")
         return
     }
     req.tokenAt = currentTokenAt()
@@ -621,6 +651,11 @@ def apiReplay(Map req) {
     apiGet(req.path, req.query, req.cb, req.data ?: [:], true)
 }
 
+/** The sign-in a request waited for failed or was skipped: its callback gets null, as for any failed request. */
+def apiFailed(Map req) {
+    "${req.cb}"(null, req.data ?: [:])
+}
+
 def apiGetDone(resp, Map req) {
     if (resp.status == 401 && !req.retried) {
         // Sign in again, unless another request already replaced the token.
@@ -629,7 +664,7 @@ def apiGetDone(resp, Map req) {
         } else {
             log.info "Dreo: ${req.path} returned 401, signing in again"
             dropToken()
-            login("apiReplay", req)
+            login("apiReplay", req, "apiFailed")
         }
         return
     }
@@ -656,16 +691,20 @@ private String errorText(resp) {
 }
 
 /**
- * Sign in, then call `then(thenData)`. Callers arriving while a sign-in is
- * already under way wait for that one instead of starting their own.
+ * Sign in, then call `then(thenData)`, or `failed(thenData)` if the sign-in
+ * fails or can't be tried, so no caller is left waiting. Callers arriving
+ * while a sign-in is already under way wait for that one instead of starting
+ * their own.
  */
-private void login(String then, Map thenData, String region = null, int depth = 0) {
+private void login(String then, Map thenData, String failed = null, String region = null, int depth = 0) {
     if (!settings.email || !passwordHash()) {
         state.status = "Enter your Dreo email and password"
+        if (failed) "${failed}"(thenData ?: [:])
         return
     }
     if (state.authFailedAt && now() - (state.authFailedAt as Long) < AUTH_RETRY_MS) {
         logDebug "Sign-in skipped: Dreo rejected the credentials recently"
+        if (failed) "${failed}"(thenData ?: [:])
         return
     }
     if (depth == 0) {
@@ -676,7 +715,7 @@ private void login(String then, Map thenData, String region = null, int depth = 
                 a.loginAt = now()
                 a.waiters = []
             }
-            if (then) a.waiters << [then: then, thenData: thenData ?: [:]]
+            if (then) a.waiters << [then: then, thenData: thenData ?: [:], failed: failed]
             if (running) {
                 logDebug "Sign-in already under way; waiting for it"
                 return
@@ -717,23 +756,21 @@ def loginDone(resp, Map ctx) {
         state.authFailedAt = now()
         state.status = "Dreo rejected the email or password (${json.msg ?: json.code}). Will retry in 30 minutes, or enter the password again."
         log.warn "Dreo: ${state.status}"
-        finishLogin()
         // Without a sign-in the cloud connection can't come back.
         if (getConnection()?.currentValue("connection") != "connected") cloudDown("Dreo rejected the sign-in")
-        reconnectLater((int) (AUTH_RETRY_MS / 1000) + 1)
+        loginFailed()
         return
     }
     if (resp.status != 200 || !json?.data?.access_token) {
         state.status = "Sign-in failed: HTTP ${resp.status} ${errorText(resp) ?: ''}".trim()
         log.warn "Dreo: ${state.status}"
-        finishLogin()
-        reconnectLater(LOGIN_RETRY_S)
+        loginFailed()
         return
     }
     String accountRegion = json.data.region
     if (REGION_HOST[accountRegion] && accountRegion != ctx.region && ctx.depth == 0) {
         log.info "Dreo: account is in region ${accountRegion}, signing in there"
-        login(null, null, accountRegion, 1)
+        login(null, null, null, accountRegion, 1)
         return
     }
     state.region = ctx.region
@@ -750,13 +787,9 @@ def loginDone(resp, Map ctx) {
     finishLogin().each { Map w -> "${w.then}"(w.thenData ?: [:]) }
 }
 
-/**
- * A failed sign-in drops whoever waited for it, connectSocket included, and
- * nothing else would reconnect: try the cloud connection again later.
- */
-private void reconnectLater(int seconds) {
-    def conn = getConnection()
-    if (conn && getFanDevices() && conn.currentValue("connection") != "connected") runIn(seconds, "connectSocket")
+/** End a failed sign-in, telling everyone who waited for it. */
+private void loginFailed() {
+    finishLogin().each { Map w -> if (w.failed) "${w.failed}"(w.thenData ?: [:]) }
 }
 
 // ---------------------------------------------------------------- discovery
@@ -988,12 +1021,25 @@ void connectSocket(Map data = [:]) {
     def conn = getConnection()
     if (!conn) return
     if (!currentToken()) {
-        login("connectSocket", [:])
+        login("connectSocket", [:], "connectFailed")
         return
     }
     String host = REGION_HOST[state.region ?: "NA"] ?: "us"
     String token = URLEncoder.encode(state.token as String, "UTF-8")
     conn.connect("wss://wsb-${host}.dreo-tech.com/websocket?accessToken=${token}&timestamp=${now()}")
+}
+
+/**
+ * The sign-in connectSocket needed failed or was skipped, and nothing else
+ * would reconnect: try again a minute later, or once Dreo's rejection of the
+ * password has had its 30 minutes.
+ */
+def connectFailed(Map data) {
+    def conn = getConnection()
+    if (!conn || !getFanDevices() || conn.currentValue("connection") == "connected") return
+    Long rejectedAt = state.authFailedAt as Long
+    int wait = rejectedAt ? (int) ((AUTH_RETRY_MS - (now() - rejectedAt)) / 1000) + 1 : LOGIN_RETRY_S
+    runIn(Math.max(LOGIN_RETRY_S, wait), "connectSocket")
 }
 
 /** The connection device opened the socket. */
@@ -1179,8 +1225,21 @@ private Map sendNow(cd, Map s, String cmd, List args, Map opts) {
         if (rest) conn.sendCommand(sn, rest)
         return params
     }
+    // Oscillating again means the position still waiting is no longer wanted:
+    // sent later, it would stop the sweep. (The fan's report shows where the head is.)
+    if (p.settle && startsOscillation(params)) dropHeadPosition(sn)
     conn.sendCommand(sn, params)
     return params
+}
+
+private boolean startsOscillation(Map params) {
+    return (params.oscmode instanceof Number && (params.oscmode as int) > 0) || (OSC_KEYS + ["voscon"]).any { params[it] == true }
+}
+
+private void dropHeadPosition(String sn) {
+    Map h = HEAD.get(sn)
+    if (h == null) return
+    synchronized (h) { h.remove("pending") }
 }
 
 private Map head(String sn) {
@@ -1347,12 +1406,13 @@ Map fanLimits(def conf, String model = null) {
         scheduled.each { add(it[0], it[1]) }
     }
     if (modes) out.modes = modes.sort { it[1] }.collect { "${it[0]}=${it[1]}" }.join(",")
-    // Oscillation angle presets: the Oscillation control's numeric items (shakehorizonangle on tower fans).
-    def angleControl = (controls + extra).find { it instanceof Map && it.items instanceof List && (it.type == "Oscillation" || "${it.cmd}" == "shakehorizon") }
-    if (angleControl) {
-        List angles = angleControl.items.findAll { it instanceof Map && "${it.value}" ==~ /\d+/ }.collect { "${it.value}" as int }.unique().sort()
-        if (angles.size() >= 2) out.oscillationAngles = angles.join(",")
-    }
+    // Oscillation angle presets: the numeric items of an Oscillation control
+    // (shakehorizonangle on tower fans). Some Oscillation controls are just a
+    // switch with no items (hoscon), so the first one with presets counts.
+    Closure<List> presets = { c -> c.items.findAll { it instanceof Map && "${it.value}" ==~ /\d+/ }.collect { "${it.value}" as int }.unique().sort() }
+    List angles = (controls + extra).findAll { it instanceof Map && it.items instanceof List && (it.type == "Oscillation" || "${it.cmd}" == "shakehorizon") }
+        .collect { presets(it) }.find { it.size() >= 2 }
+    if (angles) out.oscillationAngles = angles.join(",")
     // A light ring is a control whose command is an atm* key (CFAtmosphere on ceiling fans).
     if ((controls + extra).any { it instanceof Map && ("${it.cmd}".startsWith("atm") || "${it.type}".toLowerCase().contains("atmosphere")) }) out.lightRing = "true"
     return out

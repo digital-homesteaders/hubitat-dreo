@@ -668,11 +668,19 @@ check("a waiting head position doesn't hold back, drop or reorder stopping oscil
     // A newer position (the driver already shows oscillation off) replaces only the position.
     s = s + [oscmode: 0]
     app.dreoCommand(cd, s, "setHeadPosition", [30, 30])
-    // Oscillation switched on meanwhile goes now and isn't undone by the flush.
+    // Oscillation switched on meanwhile goes now, and the waiting position is
+    // dropped: sent later, it would stop the sweep.
     app.dreoCommand(cd, s, "setOscillation", ["horizontal"])
     hub.advance(8100)
     app.flushHead([sn: "SN8", settle: 8])
-    assert sent == [[fixedconf: "10,10"], [oscmode: 0], [oscmode: 1], [fixedconf: "30,30"]]
+    assert sent == [[fixedconf: "10,10"], [oscmode: 0], [oscmode: 1]]
+    // Switching oscillation off keeps a waiting position.
+    app.dreoCommand(cd, s, "setHeadPosition", [40, 40])     // goes now
+    app.dreoCommand(cd, s, "setHeadPosition", [50, 50])     // waits
+    app.dreoCommand(cd, s, "setOscillation", ["off"])
+    hub.advance(8100)
+    app.flushHead([sn: "SN8", settle: 8])
+    assert sent.takeRight(3) == [[fixedconf: "40,40"], [oscmode: 0], [fixedconf: "50,50"]]
     app.children = []
 }
 
@@ -827,6 +835,13 @@ check("fanLimits: a template reference or junk gives nothing, so the model table
     assert app.fanLimits([control: "junk", extraConfigs: [[key: "control", value: "junk"]]]) == [:]
     assert app.fanLimits([control: [[type: "Speed", items: [[value: 3]]]]]) == [:]
     assert app.fanLimits([control: [[type: "Mode", items: [[text: "x", value: "high"]]]]]) == [:]
+}
+
+check("fanLimits: an Oscillation switch with no presets doesn't hide a later control's angles") {
+    Map conf = [control: [[type: "Oscillation", cmd: "hoscon", items: []]],
+        extraConfigs: [[key: "control", value: [[type: "Oscillation", cmd: "shakehorizon", items: [[value: 30], [value: 45], [value: 60], [value: 90]]]]]]]
+    assert app.fanLimits(conf).oscillationAngles == "30,45,60,90"
+    assert !app.fanLimits([control: [[type: "Oscillation", cmd: "hoscon", items: []]]]).containsKey("oscillationAngles")
 }
 
 check("fanLimits: the test DR-HPF004S keeps turbo and custom, which its table and schedule both list") {

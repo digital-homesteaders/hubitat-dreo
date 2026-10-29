@@ -155,6 +155,39 @@ itself still needs checking.
    that had already failed (the driver expects exactly one after its own
    close, and takes it for the old socket's only within 3 s of the new open);
    and that a connect attempt the hub gives up on never leaves a socket open.
+11. **Open questions from the second code review (2026-10-29)**, to settle
+    with debug logging on the connection device (it logs every `Status:`
+    with the time). Each is a possible bug that depends on hub timing the
+    stand-in can't show; none has been seen on the C-8 yet.
+    - **Late close notice after a failure or timeout.** `socketDown` clears
+      `expectClose`, and `connect()` sets it only when the phase isn't
+      `closed`. So if a failed or timed-out socket's `status: closing`
+      arrives *after* the next connect has started (that is, more than the
+      5 s reconnect delay later), it is taken for the new attempt's drop: the
+      attempt is marked closed, another reconnect is scheduled, and the new
+      socket is closed when it opens. Look for a `failure:` or the connect
+      timeout followed by a `status: closing` after the next `Connecting`. If
+      it happens, a fix is to keep `expectClose` set after `socketDown`
+      whenever `close()` was called on a socket that hadn't yet reported
+      closing. (`drivers/dreo-cloud-connection.groovy`, `socketDown` and
+      `connect`.)
+    - **A real drop just after a restart may be ignored.** After a hub
+      reboot or new driver code, the phase is unknown, so `connect()` (and
+      the open handler when `was == null`) expects one close notice even if
+      no old socket exists. If Dreo then closes the new socket within 3 s of
+      opening (e.g. a rejected token), the notice is swallowed: the
+      attribute says `connected`, no reconnect is scheduled, and only an
+      unacknowledged command later notices. Check: after a reboot, does
+      Hubitat ever send a close notice for the socket from before the
+      reboot? If never, `expectClose` is needed only after new code, not a
+      reboot.
+    - **Discovery overlap on slow accounts.** A discovery counts as over
+      after 45 s (`DISCOVERY_TIMEOUT_MS`), but the device list plus several
+      rooms pages, each with a 30 s timeout, can take longer. A Done or
+      **Look again** then starts a second discovery, and the first one's
+      late `discoverRooms` clears the second's `discovering` flag. This only
+      affects accounts with several homes on a slow link. If seen, tag each
+      discovery with an id and ignore callbacks from an older one.
 
 ### The password hash setting
 

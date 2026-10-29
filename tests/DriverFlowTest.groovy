@@ -1040,7 +1040,7 @@ check("a fan whose light ring driver is missing says so once, and on the app's p
     ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
     assert app.log.at("error").size() == errors + 1, "logged once, not on every report"
     assert app.log.at("error").last().contains("could not add the 'Dreo Fan Light Ring' device for Office Fan")
-    assert f.getDataValue("missingDrivers") == "Dreo Fan Light Ring"
+    assert app.childFailures(f) == ["Dreo Fan Light Ring": ""]
     assert app.missingChildDrivers() == ["Office Fan needs 'Dreo Fan Light Ring'"]
     hub.driverFiles["Dreo Fan Light Ring"] = saved
     ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
@@ -1048,9 +1048,39 @@ check("a fan whose light ring driver is missing says so once, and on the app's p
     assert f.driver.callsNamed("addChildDevice").size() == adds
     app.updated()                                  // Done
     hub.settle()
-    assert !f.getDataValue("missingDrivers") && app.missingChildDrivers() == []
+    assert !f.getDataValue("childFailures") && app.missingChildDrivers() == []
     ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
     assert f.driver.getChildDevice("dreo-SN1-ring")
+}
+
+check("a light child that fails to add for another reason says why, not that a driver is missing") {
+    FakeDevice f = child("dreo-SN1")
+    f.driver.deleteChildDevice("dreo-SN1-ring")
+    int adds = 0
+    f.driver.metaClass.addChildDevice = { String ns, String d, String dni, Map props -> adds++; throw new RuntimeException("hub busy") }
+    ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
+    ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
+    assert adds == 1, "not tried again until Done"
+    assert app.log.at("error").last().contains("hub busy (press Done to try again)")
+    assert app.missingChildDrivers() == ["Office Fan could not add 'Dreo Fan Light Ring' (hub busy)"]
+    f.driver.metaClass = null
+    app.updated()
+    hub.settle()
+    ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
+    assert f.driver.getChildDevice("dreo-SN1-ring") && app.missingChildDrivers() == []
+}
+
+check("fan drivers from before lightChild still work with the app until re-pasted") {
+    FakeDevice f = child("dreo-SN1")
+    assert !app.lightDriverMissing(f, "Dreo Fan Light Ring")
+    app.lightDriverFailed(f, "Dreo Fan Light Ring", "Device type 'Dreo Fan Light Ring' in namespace 'dreo' not found")
+    assert app.lightDriverMissing(f, "Dreo Fan Light Ring")
+    assert app.missingChildDrivers() == ["Office Fan needs 'Dreo Fan Light Ring'"]
+    // A 0.3.0 note under its old name is cleared on Done too.
+    f.updateDataValue("missingDrivers", "Dreo Fan Light Ring")
+    app.updated()
+    hub.settle()
+    assert !f.getDataValue("childFailures") && !f.getDataValue("missingDrivers")
 }
 
 // ---- parity with the Homey app (2026-10-26): room pages, remembered humidifier levels, spread-out polls
@@ -1209,7 +1239,14 @@ check("a sign-in that fails while reconnecting tries the cloud connection again 
     ctx = a2.callsNamed("asynchttpPost").last()[3]
     a2.loginDone(new FakeResp(json: [code: 10002, msg: "busy"]), ctx)
     h2.settle()
-    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) == 1801
+    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) in 1800..1801
+    // Still within the 30 minutes: the sign-in isn't tried, and the retry waits for the rest of them.
+    h2.advance(600000)
+    timers = a2.callsNamed("runIn").size()
+    int posts = a2.callsNamed("asynchttpPost").size()
+    a2.connectSocket()
+    assert a2.callsNamed("asynchttpPost").size() == posts
+    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) in 1200..1201
     // The half-hourly poll also asks for the connection while it is down.
     a2.state.remove("authFailedAt")
     a2.state.token = "tok"
@@ -1230,6 +1267,24 @@ check("a sign-in that fails while reconnecting tries the cloud connection again 
     h2.settle()
     assert !a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }
     assert c2.driver.callsNamed("ws.connect").size() == connects + 1
+}
+
+check("a sign-in that fails or can't be tried ends the discovery waiting for it, with the reason") {
+    Hub h2 = new Hub(root)
+    def a2 = appWithFan(h2)
+    a2.state.remove("token")
+    h2.advance(61000)
+    a2.startDiscovery()
+    a2.loginDone(new FakeResp(status: 503), a2.callsNamed("asynchttpPost").last()[3])
+    h2.settle()
+    assert !a2.state.discovering && a2.state.discoverError == "Dreo device list unavailable"
+    // Dreo rejected the password recently: no sign-in, and the discovery ends at once.
+    a2.state.authFailedAt = a2.now()
+    int posts = a2.callsNamed("asynchttpPost").size()
+    a2.startDiscovery()
+    h2.settle()
+    assert a2.callsNamed("asynchttpPost").size() == posts
+    assert !a2.state.discovering && a2.state.discoverError
 }
 
 check("Done re-reads the device list even after an earlier discovery never finished") {

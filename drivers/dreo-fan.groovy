@@ -20,8 +20,6 @@ import groovy.transform.Field
 // Release version; the app compares it with its own (see dreoHello).
 @Field static final String DRIVER_VERSION = "0.3.0"
 
-// Child drivers by DNI suffix.
-@Field static final Map CHILD_DRIVERS = [ring: "Dreo Fan Light Ring"]
 
 metadata {
     definition(name: "Dreo Fan", namespace: "dreo", author: "Digital Homesteaders", importUrl: "https://raw.githubusercontent.com/digital-homesteaders/hubitat-dreo/main/drivers/dreo-fan.groovy") {
@@ -244,17 +242,16 @@ private void childEvent(Map e) {
 }
 
 /**
- * Create a light child, unless the app has noted its driver missing: the app
- * logs that once and clears it on Done, so the next report tries again.
+ * Add a light child as the app describes it (lightChild). Null while adding
+ * it has failed since the last Done: the app logs that once and shows it.
  */
 private def addChild(String kind) {
-    String driver = CHILD_DRIVERS[kind]
-    if (parent.lightDriverMissing(device, driver)) return null
+    Map c = parent.lightChild(device, kind)
+    if (!c) return null
     try {
-        return addChildDevice("dreo", driver, "${device.deviceNetworkId}-${kind}".toString(),
-            [name: driver, label: "${device.displayName} ${kind == 'ring' ? 'Light Ring' : 'Light'}", isComponent: true])
+        return addChildDevice("dreo", c.driver, c.dni, [name: c.driver, label: c.label, isComponent: true])
     } catch (ex) {
-        parent.lightDriverFailed(device, driver, ex.message)
+        parent.lightChildFailed(device, c.driver, ex)
         return null
     }
 }

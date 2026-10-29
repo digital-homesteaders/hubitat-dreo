@@ -35,6 +35,7 @@ metadata {
         attribute "timerOn", "number"
         attribute "timerOff", "number"
         attribute "schedules", "string"
+        attribute "adaptiveBrightness", "string"
         attribute "healthStatus", "enum", ["online", "offline"]
 
         command "setSpeedLevel", [[name: "Speed (1 to 12)*", type: "ENUM", description: "The speed number as in the Dreo app (maxSpeedLevel is this fan's top one); a number above it uses the top speed", constraints: SPEED_LEVELS]]
@@ -44,6 +45,7 @@ metadata {
         command "setTimerOn", [[name: "Minutes*", type: "NUMBER", description: "Switch the fan on after this many minutes (0 to 719; 0 cancels)"]]
         command "setTimerOff", [[name: "Minutes*", type: "NUMBER", description: "Switch the fan off after this many minutes (0 to 719; 0 cancels)"]]
         command "setSchedules", [[name: "Schedules*", type: "ENUM", description: "Run or pause the schedules set in the Dreo app", constraints: ["on", "off"]]]
+        command "setAdaptiveBrightness", [[name: "Adaptive brightness*", type: "ENUM", description: "Dim the display with the room light (fans with an adaptiveBrightness attribute)", constraints: ["on", "off"]]]
     }
     preferences {
         input "speedSteps", "number", title: "Number of speed steps (0 = from the model)", defaultValue: 0, range: "0..20"
@@ -52,8 +54,6 @@ metadata {
     }
 }
 
-// Child drivers by DNI suffix.
-@Field static final Map CHILD_DRIVERS = [light: "Dreo Ceiling Fan Light", ring: "Dreo Fan Light Ring"]
 
 // ---------------------------------------------------------------- lifecycle
 
@@ -83,6 +83,7 @@ def setChildLock(value) { sendDreo("setChildLock", [value]) }
 def setTimerOn(minutes) { sendDreo("setTimerOn", [minutes]) }
 def setTimerOff(minutes) { sendDreo("setTimerOff", [minutes]) }
 def setSchedules(value) { sendDreo("setSchedules", [value]) }
+def setAdaptiveBrightness(value) { sendDreo("setAdaptiveBrightness", [value]) }
 
 // Light and light ring child (component) commands.
 def componentOn(cd) { sendDreo("${childKind(cd)}.on") }
@@ -160,17 +161,16 @@ private void childEvent(Map e) {
 }
 
 /**
- * Create a light child, unless the app has noted its driver missing: the app
- * logs that once and clears it on Done, so the next report tries again.
+ * Add a light child as the app describes it (lightChild). Null while adding
+ * it has failed since the last Done: the app logs that once and shows it.
  */
 private def addChild(String kind) {
-    String driver = CHILD_DRIVERS[kind]
-    if (parent.lightDriverMissing(device, driver)) return null
+    Map c = parent.lightChild(device, kind)
+    if (!c) return null
     try {
-        return addChildDevice("dreo", driver, "${device.deviceNetworkId}-${kind}".toString(),
-            [name: driver, label: "${device.displayName} ${kind == 'ring' ? 'Light Ring' : 'Light'}", isComponent: true])
+        return addChildDevice("dreo", c.driver, c.dni, [name: c.driver, label: c.label, isComponent: true])
     } catch (ex) {
-        parent.lightDriverFailed(device, driver, ex.message)
+        parent.lightChildFailed(device, c.driver, ex)
         return null
     }
 }

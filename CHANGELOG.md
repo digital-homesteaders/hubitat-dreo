@@ -34,8 +34,20 @@ and every driver, then press **Done** in the app.
 - **Head positions on fans that need the head to settle** (DR-HAF004S,
   DR-HPF017S): only the position waits; stopping oscillation goes straight
   away. Before, a second position within the wait could drop the
-  oscillation-off, and an oscillation change made during the wait could be
-  undone when the position went out.
+  oscillation-off. Turning oscillation on during the wait now drops the
+  waiting position, which would otherwise stop the sweep when it went out.
+- **A failed sign-in no longer leaves anything waiting.** A device-list
+  lookup or refresh whose sign-in fails (or isn't tried, in the 30 minutes
+  after Dreo rejects the password) ends straight away as a failed request,
+  e.g. **Choose devices** shows the error at once instead of after 45 s.
+- **Light children that fail to add for a reason other than a missing
+  driver** are shown on the main page with that reason, instead of as
+  "needs driver". The app now decides each light child's driver and label
+  for both fan drivers.
+- Tower fans: the sweep-width presets are found even when the device list
+  also has an Oscillation on/off switch with no presets.
+- Ceiling fans: `setAdaptiveBrightness` and `adaptiveBrightness`, as on the
+  other fans.
 - Done re-reads the device list even when an earlier lookup never finished
   (e.g. its sign-in failed); before, that waited for a visit to Choose devices.
 - A speed range, mode list, angle list or light ring that a device's Dreo
