@@ -653,6 +653,29 @@ check("head position waits for the head to settle on DR-HPF017S") {
     app.children = []
 }
 
+check("a waiting head position doesn't hold back, drop or reorder stopping oscillation") {
+    def sent = []
+    def conn = new FakeDevice(deviceNetworkId: "dreo-connection-${app.app.id}", name: "conn")
+    conn.metaClass.sendCommand = { String sn, Map p -> sent << p }
+    app.children = [conn]
+    FakeDevice cd = new FakeDevice(id: 8, deviceNetworkId: "dreo-SN8", name: "DR-HPF017S", data: [model: "DR-HPF017S", sn: "SN8"])
+    Map s = [poweron: true, oscmode: 0, fixedconf: "0,0", cruiseconf: "90,75,-30,-75"]
+    app.dreoCommand(cd, s, "setHeadPosition", [10, 10])
+    // Oscillating again within the settle time: the new position waits, stopping oscillation doesn't.
+    s = s + [fixedconf: "10,10", oscmode: 1]
+    assert app.dreoCommand(cd, s, "setHeadPosition", [20, 20]) == [fixedconf: "20,20", oscmode: 0]
+    assert sent == [[fixedconf: "10,10"], [oscmode: 0]]
+    // A newer position (the driver already shows oscillation off) replaces only the position.
+    s = s + [oscmode: 0]
+    app.dreoCommand(cd, s, "setHeadPosition", [30, 30])
+    // Oscillation switched on meanwhile goes now and isn't undone by the flush.
+    app.dreoCommand(cd, s, "setOscillation", ["horizontal"])
+    hub.advance(8100)
+    app.flushHead([sn: "SN8", settle: 8])
+    assert sent == [[fixedconf: "10,10"], [oscmode: 0], [oscmode: 1], [fixedconf: "30,30"]]
+    app.children = []
+}
+
 // ---------------------------------------------------------------- humidifiers
 
 // A humidifier device as the driver passes it, with data values from discovery.

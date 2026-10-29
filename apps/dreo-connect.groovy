@@ -62,6 +62,8 @@ preferences {
 @Field static final ConcurrentHashMap<Long, Map> AUTH = new ConcurrentHashMap<>()
 // A sign-in older than this is assumed lost and may be started again.
 @Field static final long LOGIN_STALE_MS = 60 * 1000L
+// After a sign-in fails (no answer, not a rejection), try the cloud connection again this much later.
+@Field static final int LOGIN_RETRY_S = 60
 
 // Commands for a device showing offline, held while a refresh checks whether
 // it really is (see dreoCommand), keyed by serial number. In memory only: they
@@ -212,6 +214,8 @@ preferences {
 @Field static final int ROOM_PAGES_MAX = 10
 // Seconds between each device's refresh in the half-hourly poll, so they don't all hit Dreo at once.
 @Field static final int POLL_SPREAD_S = 2
+// Device data values that discovery sets from the device list (fanLimits, humidifierLimits).
+@Field static final List LIMIT_KEYS = ["speedRange", "modes", "oscillationAngles", "lightRing", "humidityRange", "mistRange"]
 
 // ---------------------------------------------------------------- pages
 
@@ -392,7 +396,7 @@ void initialize() {
         // Re-read the device list so devices pick up speed ranges, modes and
         // humidifier limits from Dreo (e.g. after pasting a newer app) without
         // a visit to Choose devices.
-        if (!state.discovering) startDiscovery()
+        if (!discoveryRunning()) startDiscovery()
     } else {
         getConnection()?.disconnect()
     }
@@ -490,11 +494,20 @@ private List missingChildDrivers() {
 /** Limits read at discovery (speed range, modes, humidifier ranges) also reach devices added earlier. */
 private void applyLimits(Map found) {
     getFanDevices().each { cd ->
-        Map limits = found[cd.getDataValue("sn")]?.limits ?: [:]
+        // Not listed, or its limits couldn't be read: keep what the device has.
+        Map limits = found[cd.getDataValue("sn")]?.limits
+        if (limits == null) return
         boolean changed = false
         limits.each { k, v ->
             if (cd.getDataValue(k) != v) {
                 cd.updateDataValue(k, v)
+                changed = true
+            }
+        }
+        // A limit the device list no longer gives goes, so the model table applies again.
+        (LIMIT_KEYS - limits.keySet()).each { String k ->
+            if (cd.getDataValue(k) != null) {
+                cd.removeDataValue(k)
                 changed = true
             }
         }
@@ -707,12 +720,14 @@ def loginDone(resp, Map ctx) {
         finishLogin()
         // Without a sign-in the cloud connection can't come back.
         if (getConnection()?.currentValue("connection") != "connected") cloudDown("Dreo rejected the sign-in")
+        reconnectLater((int) (AUTH_RETRY_MS / 1000) + 1)
         return
     }
     if (resp.status != 200 || !json?.data?.access_token) {
         state.status = "Sign-in failed: HTTP ${resp.status} ${errorText(resp) ?: ''}".trim()
         log.warn "Dreo: ${state.status}"
         finishLogin()
+        reconnectLater(LOGIN_RETRY_S)
         return
     }
     String accountRegion = json.data.region
@@ -735,7 +750,22 @@ def loginDone(resp, Map ctx) {
     finishLogin().each { Map w -> "${w.then}"(w.thenData ?: [:]) }
 }
 
+/**
+ * A failed sign-in drops whoever waited for it, connectSocket included, and
+ * nothing else would reconnect: try the cloud connection again later.
+ */
+private void reconnectLater(int seconds) {
+    def conn = getConnection()
+    if (conn && getFanDevices() && conn.currentValue("connection") != "connected") runIn(seconds, "connectSocket")
+}
+
 // ---------------------------------------------------------------- discovery
+
+/** Whether a discovery is under way; one older than DISCOVERY_TIMEOUT_MS has failed (e.g. its sign-in did). */
+private boolean discoveryRunning() {
+    Long started = state.discovering as Long
+    return started && now() - started <= DISCOVERY_TIMEOUT_MS
+}
 
 private void startDiscovery() {
     state.discovering = now()
@@ -798,7 +828,7 @@ def discoverRooms(data, Map ctx) {
 
 def appButtonHandler(String btn) {
     if (btn == "rediscover") {
-        if (!state.discovering) startDiscovery()
+        if (!discoveryRunning()) startDiscovery()
         return
     }
     if (btn == "dumpRaw") {
@@ -839,6 +869,8 @@ private String shortSn(def sn) {
 
 /** Re-read every device, a few seconds apart rather than all at once. */
 def pollAll() {
+    // A cloud connection still down (e.g. a sign-in failed while reconnecting) is tried again here at the latest.
+    if (getConnection() && getConnection().currentValue("connection") != "connected") connectSocket()
     getFanDevices().eachWithIndex { cd, int i ->
         String sn = cd.getDataValue("sn")
         if (i == 0) refreshFan(sn)
@@ -1140,7 +1172,13 @@ private Map sendNow(cd, Map s, String cmd, List args, Map opts) {
     }
     logDebug "${cd.displayName}: ${cmd} ${args} -> ${params}"
     String sn = cd.getDataValue("sn")
-    if (params.containsKey("fixedconf") && p.settle && !headReady(sn, p.settle as int, params)) return params
+    // Only the position waits for the head to settle (see headReady): the rest,
+    // such as stopping oscillation, goes now, in order with later commands.
+    if (params.containsKey("fixedconf") && p.settle && !headReady(sn, p.settle as int, [fixedconf: params.fixedconf])) {
+        Map rest = params.findAll { k, v -> k != "fixedconf" }
+        if (rest) conn.sendCommand(sn, rest)
+        return params
+    }
     conn.sendCommand(sn, params)
     return params
 }

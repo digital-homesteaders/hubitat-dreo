@@ -25,6 +25,22 @@ and every driver, then press **Done** in the app.
 - Rooms: every page of Dreo's rooms list is read, not only the first.
 - The half-hourly refresh reads devices two seconds apart instead of all at once.
 - Re-paste: the app and every driver (new commands and attributes).
+- **Cloud connection comes back after a failed sign-in.** If the connection
+  had to sign in again while reconnecting (e.g. during an internet outage)
+  and that sign-in failed, nothing tried again, so every device stayed
+  offline until a command, Done or a reboot. Now it retries a minute later
+  (30 minutes after Dreo rejects the password), and the half-hourly refresh
+  reconnects a connection that is still down.
+- **Head positions on fans that need the head to settle** (DR-HAF004S,
+  DR-HPF017S): only the position waits; stopping oscillation goes straight
+  away. Before, a second position within the wait could drop the
+  oscillation-off, and an oscillation change made during the wait could be
+  undone when the position went out.
+- Done re-reads the device list even when an earlier lookup never finished
+  (e.g. its sign-in failed); before, that waited for a visit to Choose devices.
+- A speed range, mode list, angle list or light ring that a device's Dreo
+  device list no longer gives is removed from the device, so the model table
+  applies again.
 - **Cloud connection: fewer false drops.** Fixes from a code review of 0.3.0.
   The close notice for a socket the connection closed itself is expected and
   ignored exactly once, even when Hubitat delivers it just after the new

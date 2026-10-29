@@ -1172,4 +1172,97 @@ check("the half-hourly poll reads devices a few seconds apart") {
     assert a2.callsNamed("asynchttpGet").last()[3].data == [sn: "SN2"]
 }
 
+/** A fresh app with one fan (DR-HTF004S) added and its connection device, not connected. */
+def appWithFan(Hub h, Map limits = [:]) {
+    def a = h.app()
+    a.settings.email = "me@example.com"
+    a.state.emailUsed = "me@example.com"
+    a.settings.passwordMd5 = "x"
+    a.state.token = "tok"
+    a.discoverDevices([list: [[deviceId: "1", sn: "SN1", model: "DR-HTF004S", deviceName: "A"] + limits]], [:])
+    a.discoverRooms(null, [:])
+    a.settings.selectedFans = ["SN1"]
+    a.updated()
+    h.settle()
+    return a
+}
+
+check("a sign-in that fails while reconnecting tries the cloud connection again later") {
+    Hub h2 = new Hub(root)
+    def a2 = appWithFan(h2)
+    FakeDevice c2 = a2.getChildDevice("dreo-connection-${a2.app.id}")
+    c2.driver.webSocketStatus("failure: connection reset")
+    h2.settle()
+    // The token is gone (e.g. after three failures): reconnecting needs a sign-in first.
+    a2.state.remove("token")
+    h2.advance(61000)
+    int timers = a2.callsNamed("runIn").size()
+    a2.connectSocket()
+    Map ctx = a2.callsNamed("asynchttpPost").last()[3]
+    a2.loginDone(new FakeResp(status: 503), ctx)
+    h2.settle()
+    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) == 60
+    // Rejected: tried again once the 30-minute wait is over.
+    h2.advance(61000)
+    timers = a2.callsNamed("runIn").size()
+    a2.connectSocket()
+    ctx = a2.callsNamed("asynchttpPost").last()[3]
+    a2.loginDone(new FakeResp(json: [code: 10002, msg: "busy"]), ctx)
+    h2.settle()
+    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) == 1801
+    // The half-hourly poll also asks for the connection while it is down.
+    a2.state.remove("authFailedAt")
+    a2.state.token = "tok"
+    int connects = c2.driver.callsNamed("ws.connect").size()
+    a2.pollAll()
+    h2.settle()
+    assert c2.driver.callsNamed("ws.connect").size() == connects + 1
+    // Connected: nothing more is scheduled after a failed sign-in, and the poll leaves the socket alone.
+    c2.driver.webSocketStatus("status: open")
+    h2.settle()
+    timers = a2.callsNamed("runIn").size()
+    a2.state.remove("token")
+    h2.advance(61000)
+    a2.refreshFan("SN1")
+    a2.loginDone(new FakeResp(status: 503), a2.callsNamed("asynchttpPost").last()[3])
+    a2.state.token = "tok"
+    a2.pollAll()
+    h2.settle()
+    assert !a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }
+    assert c2.driver.callsNamed("ws.connect").size() == connects + 1
+}
+
+check("Done re-reads the device list even after an earlier discovery never finished") {
+    Hub h2 = new Hub(root)
+    def a2 = appWithFan(h2)
+    a2.state.discovering = a2.now()       // a discovery whose sign-in failed
+    h2.settle()
+    int gets = a2.callsNamed("asynchttpGet").size()
+    a2.updated()
+    h2.settle()
+    assert !a2.callsNamed("asynchttpGet").drop(gets).find { it[3]?.cb == "discoverDevices" }
+    h2.advance(46000)
+    a2.updated()
+    h2.settle()
+    assert a2.callsNamed("asynchttpGet").drop(gets).find { it[3]?.cb == "discoverDevices" }
+}
+
+check("a limit the device list no longer gives is removed from the device; unreadable limits keep theirs") {
+    Hub h2 = new Hub(root)
+    Map conf = [controlsConf: [control: [[type: "Speed", items: (1..12).collect { [value: "${it}"] }],
+        [type: "Oscillation", cmd: "shakehorizon", items: [[value: 30], [value: 60], [value: 90]]]]]]
+    def a2 = appWithFan(h2, conf)
+    FakeDevice f = a2.getChildDevice("dreo-SN1")
+    assert f.getDataValue("speedRange") == "1-12" && f.getDataValue("oscillationAngles") == "30,60,90"
+    // The device list stops giving the angles: the device drops them.
+    a2.discoverDevices([list: [[deviceId: "1", sn: "SN1", model: "DR-HTF004S", deviceName: "A",
+        controlsConf: [control: [conf.controlsConf.control[0]]]]]], [:])
+    h2.settle()
+    assert f.getDataValue("speedRange") == "1-12" && f.getDataValue("oscillationAngles") == null
+    // A device missing from the list, or with no limits read, keeps its own.
+    a2.applyLimits([:])
+    a2.applyLimits([SN1: [name: "A", model: "DR-HTF004S"]])
+    assert f.getDataValue("speedRange") == "1-12"
+}
+
 Check.finish()
