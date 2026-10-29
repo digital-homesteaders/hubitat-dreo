@@ -3,7 +3,7 @@
  * a ceiling fan's ring), as a child of the fan device. Commands go to the
  * parent, which sends them to Dreo; the parent sends state back through parse().
  *
- * Effects: 1 constant, 2 circle, 3 breath.
+ * Effects: 1 constant, 2 circle, 3 breath; effect speed low, medium or high (atmspeed 1-3).
  *
  * Copyright (c) 2026 Digital Homesteaders. MIT License.
  */
@@ -22,6 +22,10 @@ metadata {
         capability "ColorControl"
         capability "LightEffects"
         capability "Refresh"
+
+        attribute "effectSpeed", "enum", ["low", "medium", "high"]
+
+        command "setEffectSpeed", [[name: "Speed*", type: "ENUM", description: "How fast the circle and breath effects run", constraints: ["low", "medium", "high"]]]
     }
     preferences {
         input "txtEnable", "bool", title: "Description text logging", defaultValue: true
@@ -53,6 +57,7 @@ def setSaturation(saturation) { parent?.componentSetSaturation(device, saturatio
 def setEffect(effect) { parent?.componentSetEffect(device, effect) }
 def setNextEffect() { parent?.componentSetNextEffect(device) }
 def setPreviousEffect() { parent?.componentSetPreviousEffect(device) }
+def setEffectSpeed(speed) { parent?.componentSetEffectSpeed(device, speed) }
 def refresh() { parent?.componentRefresh(device) }
 
 /** Called by the app (or the parent fan) on Done: this driver's version where it differs from the app's. */

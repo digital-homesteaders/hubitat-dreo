@@ -32,6 +32,10 @@ metadata {
         attribute "display", "string"
         attribute "panelSound", "string"
         attribute "ambientLight", "string"
+        attribute "timerOn", "number"
+        attribute "timerOff", "number"
+        attribute "schedules", "string"
+        attribute "adaptiveBrightness", "string"
         attribute "healthStatus", "enum", ["online", "offline"]
 
         command "setTargetHumidity", [[name: "Target humidity*", type: "NUMBER", description: "Relative humidity to hold, in % (switches Manual mode to Auto)"]]
@@ -40,6 +44,10 @@ metadata {
         command "setDisplay", [[name: "Display*", type: "ENUM", description: "Display on or off", constraints: ["on", "off"]]]
         command "setPanelSound", [[name: "Panel sound*", type: "ENUM", description: "Beep when buttons are pressed", constraints: ["on", "off"]]]
         command "setAmbientLight", [[name: "Ambient light*", type: "ENUM", description: "Night light on or off", constraints: ["on", "off"]]]
+        command "setTimerOn", [[name: "Minutes*", type: "NUMBER", description: "Switch on after this many minutes (0 to 719; 0 cancels)"]]
+        command "setTimerOff", [[name: "Minutes*", type: "NUMBER", description: "Switch off after this many minutes (0 to 719; 0 cancels)"]]
+        command "setSchedules", [[name: "Schedules*", type: "ENUM", description: "Run or pause the schedules set in the Dreo app", constraints: ["on", "off"]]]
+        command "setAdaptiveBrightness", [[name: "Adaptive brightness*", type: "ENUM", description: "Dim the display with the room light (models with an adaptiveBrightness attribute)", constraints: ["on", "off"]]]
     }
     preferences {
         input "txtEnable", "bool", title: "Description text logging", defaultValue: true
@@ -72,17 +80,29 @@ def setMistLevel(level) { sendDreo("setMistLevel", [level]) }
 def setDisplay(value) { sendDreo("setDisplay", [value]) }
 def setPanelSound(value) { sendDreo("setPanelSound", [value]) }
 def setAmbientLight(value) { sendDreo("setAmbientLight", [value]) }
+def setTimerOn(minutes) { sendDreo("setTimerOn", [minutes]) }
+def setTimerOff(minutes) { sendDreo("setTimerOff", [minutes]) }
+def setSchedules(value) { sendDreo("setSchedules", [value]) }
+def setAdaptiveBrightness(value) { sendDreo("setAdaptiveBrightness", [value]) }
 
 private void sendDreo(String cmd, List args = []) {
-    Map params = parent?.dreoCommand(device, state.dreo ?: [:], cmd, args)
+    Map params = parent?.dreoCommand(device, state.dreo ?: [:], cmd, args, opts())
     // Show the change straight away; the humidifier's own report follows.
     if (params) dreoUpdate(params, null)
+}
+
+/** The display and ambient light levels last seen on, so "on" restores them rather than a fixed level. */
+private Map opts() {
+    return [ledlevelOn: state.ledlevelOn, rgblevelOn: state.rgblevelOn]
 }
 
 // ---------------------------------------------------------------- state from the app
 
 /** Merge reported Dreo state; `online` is true/false when known, else null. */
 void dreoUpdate(Map reported, Boolean online) {
+    ["ledlevel", "rgblevel"].each { String k ->
+        if (reported?.get(k) instanceof Number && (reported[k] as int) > 0) state["${k}On".toString()] = reported[k] as int
+    }
     Map s = (state.dreo ?: [:]) + (reported ?: [:])
     // The app drops private, hardware and noisy network keys.
     state.dreo = parent ? parent.dreoState(s) : s

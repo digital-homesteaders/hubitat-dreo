@@ -1040,7 +1040,7 @@ check("a fan whose light ring driver is missing says so once, and on the app's p
     ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
     assert app.log.at("error").size() == errors + 1, "logged once, not on every report"
     assert app.log.at("error").last().contains("could not add the 'Dreo Fan Light Ring' device for Office Fan")
-    assert f.getDataValue("missingDrivers") == "Dreo Fan Light Ring"
+    assert app.childFailures(f) == ["Dreo Fan Light Ring": ""]
     assert app.missingChildDrivers() == ["Office Fan needs 'Dreo Fan Light Ring'"]
     hub.driverFiles["Dreo Fan Light Ring"] = saved
     ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
@@ -1048,9 +1048,276 @@ check("a fan whose light ring driver is missing says so once, and on the app's p
     assert f.driver.callsNamed("addChildDevice").size() == adds
     app.updated()                                  // Done
     hub.settle()
-    assert !f.getDataValue("missingDrivers") && app.missingChildDrivers() == []
+    assert !f.getDataValue("childFailures") && app.missingChildDrivers() == []
     ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
     assert f.driver.getChildDevice("dreo-SN1-ring")
+}
+
+check("a light child that fails to add for another reason says why, not that a driver is missing") {
+    FakeDevice f = child("dreo-SN1")
+    f.driver.deleteChildDevice("dreo-SN1-ring")
+    int adds = 0
+    f.driver.metaClass.addChildDevice = { String ns, String d, String dni, Map props -> adds++; throw new RuntimeException("hub busy") }
+    ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
+    ws([devicesn: "SN1", method: "report", reported: [atmon: false]])
+    assert adds == 1, "not tried again until Done"
+    assert app.log.at("error").last().contains("hub busy (press Done to try again)")
+    assert app.missingChildDrivers() == ["Office Fan could not add 'Dreo Fan Light Ring' (hub busy)"]
+    f.driver.metaClass = null
+    app.updated()
+    hub.settle()
+    ws([devicesn: "SN1", method: "report", reported: [atmon: true]])
+    assert f.driver.getChildDevice("dreo-SN1-ring") && app.missingChildDrivers() == []
+}
+
+check("fan drivers from before lightChild still work with the app until re-pasted") {
+    FakeDevice f = child("dreo-SN1")
+    assert !app.lightDriverMissing(f, "Dreo Fan Light Ring")
+    app.lightDriverFailed(f, "Dreo Fan Light Ring", "Device type 'Dreo Fan Light Ring' in namespace 'dreo' not found")
+    assert app.lightDriverMissing(f, "Dreo Fan Light Ring")
+    assert app.missingChildDrivers() == ["Office Fan needs 'Dreo Fan Light Ring'"]
+    // A 0.3.0 note under its old name is cleared on Done too.
+    f.updateDataValue("missingDrivers", "Dreo Fan Light Ring")
+    app.updated()
+    hub.settle()
+    assert !f.getDataValue("childFailures") && !f.getDataValue("missingDrivers")
+}
+
+// ---- parity with the Homey app (2026-10-26): room pages, remembered humidifier levels, spread-out polls
+
+check("rooms: every page of the list is read, up to a limit") {
+    Hub h2 = new Hub(root)
+    def a2 = h2.app()
+    a2.settings.email = "me@example.com"
+    a2.state.emailUsed = "me@example.com"
+    a2.settings.passwordMd5 = "x"
+    a2.state.token = "tok"
+    a2.discoverDevices([list: [
+        [deviceId: "1", sn: "SN1", model: "DR-HPF008S", deviceName: "Office Fan"],
+        [deviceId: "2", sn: "SN2", model: "DR-HTF004S", deviceName: "Bedroom Fan"],
+    ]], [:])
+    Map rooms = a2.callsNamed("asynchttpGet").last()[3]
+    assert rooms.cb == "discoverRooms" && rooms.data == [page: 1] && rooms.query.pageNo == 1
+    a2.state.discovering = a2.now()
+    a2.discoverRooms([totalPage: 2, familyRooms: [[rooms: [[roomName: "Office", devices: [[sn: "SN1"]]]]]]], [page: 1])
+    assert a2.state.discovering                       // not done yet: page 2 is on its way
+    rooms = a2.callsNamed("asynchttpGet").last()[3]
+    assert rooms.cb == "discoverRooms" && rooms.data == [page: 2] && rooms.query.pageNo == 2
+    a2.discoverRooms([totalPage: 2, familyRooms: [[rooms: [[roomName: "Bedroom", devices: [[sn: "SN2"]]]]]]], [page: 2])
+    h2.settle()
+    assert !a2.state.discovering && a2.state.discovered.SN1.room == "Office" && a2.state.discovered.SN2.room == "Bedroom"
+    // A missing totalPage means one page; a failed page still ends discovery.
+    int gets = a2.callsNamed("asynchttpGet").size()
+    a2.state.discovering = a2.now()
+    a2.discoverRooms([familyRooms: []], [page: 1])
+    assert !a2.state.discovering && a2.callsNamed("asynchttpGet").size() == gets
+    a2.state.discovering = a2.now()
+    a2.discoverRooms(null, [page: 3])
+    assert !a2.state.discovering
+    // Never more than ROOM_PAGES_MAX pages, whatever the list claims.
+    a2.state.discovering = a2.now()
+    a2.discoverRooms([totalPage: 99, familyRooms: []], [page: 10])
+    assert !a2.state.discovering && a2.callsNamed("asynchttpGet").size() == gets
+}
+
+check("humidifier: display and ambient light switch back on at the level they had") {
+    Hub h2 = new Hub(root)
+    def a2 = h2.app()
+    a2.settings.email = "me@example.com"
+    a2.state.emailUsed = "me@example.com"
+    a2.settings.passwordMd5 = "x"
+    a2.state.token = "tok"
+    a2.discoverDevices([list: [[deviceId: "5", sn: "SN5", model: "DR-HHM001S", deviceName: "Humidifier"]]], [:])
+    a2.discoverRooms(null, [:])
+    a2.settings.selectedFans = ["SN5"]
+    a2.updated()
+    h2.settle()
+    FakeDevice hm = a2.getChildDevice("dreo-SN5")
+    FakeDevice c2 = a2.getChildDevice("dreo-connection-${a2.app.id}")
+    c2.webSocketStatus("status: open")
+    h2.settle()
+    a2.fanStateDone([mixed: [poweron: [state: true], mode: [state: 1], rh: [state: 47], rhautolevel: [state: 60],
+        foglevel: [state: 3], ledlevel: [state: 3], rgblevel: [state: 1], connected: [state: true]]], [sn: "SN5"])
+    h2.settle()
+    assert hm.driver.state.ledlevelOn == 3 && hm.driver.state.rgblevelOn == 1
+    Closure lastSent = {
+        new JsonSlurper().parseText(c2.driver.callsNamed("ws.send").collect { it[1] }.findAll { it != "2" }.last()).params
+    }
+    hm.setDisplay("off")
+    h2.settle()
+    assert lastSent() == [ledlevel: 0] && hm.currentValue("display") == "off"
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    h2.settle()
+    assert hm.driver.state.ledlevelOn == 3                // a zero doesn't overwrite the remembered level
+    hm.setDisplay("on")
+    h2.settle()
+    assert lastSent() == [ledlevel: 3] && hm.currentValue("display") == "on"
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    hm.setAmbientLight("off")
+    h2.settle()
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    // The Dreo app changed the level meanwhile: that is what comes back.
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "report", reported: [rgblevel: 2]]))
+    h2.settle()
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "report", reported: [rgblevel: 0]]))
+    h2.settle()
+    hm.setAmbientLight("on")
+    h2.settle()
+    assert lastSent() == [rgblevel: 2]
+    // Settings any device may have.
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "control-reply", reported: [:]]))
+    c2.parse(JsonOutput.toJson([devicesn: "SN5", method: "report", reported: [timeroff: [du: 0, ts: 1], scheon: false, lightsensoron: true]]))
+    h2.settle()
+    assert hm.currentValue("timerOff") == 0 && hm.currentValue("schedules") == "off" && hm.currentValue("adaptiveBrightness") == "on"
+    hm.setTimerOff(20)
+    h2.settle()
+    assert lastSent() == [timeroff: 20] && hm.currentValue("timerOff") == 20
+}
+
+check("the half-hourly poll reads devices a few seconds apart") {
+    Hub h2 = new Hub(root)
+    def a2 = h2.app()
+    a2.settings.email = "me@example.com"
+    a2.state.emailUsed = "me@example.com"
+    a2.settings.passwordMd5 = "x"
+    a2.state.token = "tok"
+    a2.discoverDevices([list: [
+        [deviceId: "1", sn: "SN1", model: "DR-HPF008S", deviceName: "A"],
+        [deviceId: "2", sn: "SN2", model: "DR-HTF004S", deviceName: "B"],
+        [deviceId: "3", sn: "SN3", model: "DR-HAF001S", deviceName: "C"],
+    ]], [:])
+    a2.discoverRooms(null, [:])
+    a2.settings.selectedFans = ["SN1", "SN2", "SN3"]
+    a2.updated()
+    h2.settle()
+    int gets = a2.callsNamed("asynchttpGet").size()
+    int timers = a2.callsNamed("runIn").size()
+    a2.pollAll()
+    List states = a2.callsNamed("asynchttpGet").drop(gets).findAll { it[3]?.cb == "fanStateDone" }
+    assert states.collect { it[3].data.sn } == ["SN1"]  // the first straight away
+    List later = a2.callsNamed("runIn").drop(timers).findAll { it[2] == "pollOne" }
+    assert later.collect { [it[1], it[3].data.sn] } == [[2, "SN2"], [4, "SN3"]]
+    assert later.every { it[3].overwrite == false }
+    a2.pollOne(later[0][3].data)
+    assert a2.callsNamed("asynchttpGet").last()[3].data == [sn: "SN2"]
+}
+
+/** A fresh app with one fan (DR-HTF004S) added and its connection device, not connected. */
+def appWithFan(Hub h, Map limits = [:]) {
+    def a = h.app()
+    a.settings.email = "me@example.com"
+    a.state.emailUsed = "me@example.com"
+    a.settings.passwordMd5 = "x"
+    a.state.token = "tok"
+    a.discoverDevices([list: [[deviceId: "1", sn: "SN1", model: "DR-HTF004S", deviceName: "A"] + limits]], [:])
+    a.discoverRooms(null, [:])
+    a.settings.selectedFans = ["SN1"]
+    a.updated()
+    h.settle()
+    return a
+}
+
+check("a sign-in that fails while reconnecting tries the cloud connection again later") {
+    Hub h2 = new Hub(root)
+    def a2 = appWithFan(h2)
+    FakeDevice c2 = a2.getChildDevice("dreo-connection-${a2.app.id}")
+    c2.driver.webSocketStatus("failure: connection reset")
+    h2.settle()
+    // The token is gone (e.g. after three failures): reconnecting needs a sign-in first.
+    a2.state.remove("token")
+    h2.advance(61000)
+    int timers = a2.callsNamed("runIn").size()
+    a2.connectSocket()
+    Map ctx = a2.callsNamed("asynchttpPost").last()[3]
+    a2.loginDone(new FakeResp(status: 503), ctx)
+    h2.settle()
+    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) == 60
+    // Rejected: tried again once the 30-minute wait is over.
+    h2.advance(61000)
+    timers = a2.callsNamed("runIn").size()
+    a2.connectSocket()
+    ctx = a2.callsNamed("asynchttpPost").last()[3]
+    a2.loginDone(new FakeResp(json: [code: 10002, msg: "busy"]), ctx)
+    h2.settle()
+    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) in 1800..1801
+    // Still within the 30 minutes: the sign-in isn't tried, and the retry waits for the rest of them.
+    h2.advance(600000)
+    timers = a2.callsNamed("runIn").size()
+    int posts = a2.callsNamed("asynchttpPost").size()
+    a2.connectSocket()
+    assert a2.callsNamed("asynchttpPost").size() == posts
+    assert a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }?.get(1) in 1200..1201
+    // The half-hourly poll also asks for the connection while it is down.
+    a2.state.remove("authFailedAt")
+    a2.state.token = "tok"
+    int connects = c2.driver.callsNamed("ws.connect").size()
+    a2.pollAll()
+    h2.settle()
+    assert c2.driver.callsNamed("ws.connect").size() == connects + 1
+    // Connected: nothing more is scheduled after a failed sign-in, and the poll leaves the socket alone.
+    c2.driver.webSocketStatus("status: open")
+    h2.settle()
+    timers = a2.callsNamed("runIn").size()
+    a2.state.remove("token")
+    h2.advance(61000)
+    a2.refreshFan("SN1")
+    a2.loginDone(new FakeResp(status: 503), a2.callsNamed("asynchttpPost").last()[3])
+    a2.state.token = "tok"
+    a2.pollAll()
+    h2.settle()
+    assert !a2.callsNamed("runIn").drop(timers).find { it[2] == "connectSocket" }
+    assert c2.driver.callsNamed("ws.connect").size() == connects + 1
+}
+
+check("a sign-in that fails or can't be tried ends the discovery waiting for it, with the reason") {
+    Hub h2 = new Hub(root)
+    def a2 = appWithFan(h2)
+    a2.state.remove("token")
+    h2.advance(61000)
+    a2.startDiscovery()
+    a2.loginDone(new FakeResp(status: 503), a2.callsNamed("asynchttpPost").last()[3])
+    h2.settle()
+    assert !a2.state.discovering && a2.state.discoverError == "Dreo device list unavailable"
+    // Dreo rejected the password recently: no sign-in, and the discovery ends at once.
+    a2.state.authFailedAt = a2.now()
+    int posts = a2.callsNamed("asynchttpPost").size()
+    a2.startDiscovery()
+    h2.settle()
+    assert a2.callsNamed("asynchttpPost").size() == posts
+    assert !a2.state.discovering && a2.state.discoverError
+}
+
+check("Done re-reads the device list even after an earlier discovery never finished") {
+    Hub h2 = new Hub(root)
+    def a2 = appWithFan(h2)
+    a2.state.discovering = a2.now()       // a discovery whose sign-in failed
+    h2.settle()
+    int gets = a2.callsNamed("asynchttpGet").size()
+    a2.updated()
+    h2.settle()
+    assert !a2.callsNamed("asynchttpGet").drop(gets).find { it[3]?.cb == "discoverDevices" }
+    h2.advance(46000)
+    a2.updated()
+    h2.settle()
+    assert a2.callsNamed("asynchttpGet").drop(gets).find { it[3]?.cb == "discoverDevices" }
+}
+
+check("a limit the device list no longer gives is removed from the device; unreadable limits keep theirs") {
+    Hub h2 = new Hub(root)
+    Map conf = [controlsConf: [control: [[type: "Speed", items: (1..12).collect { [value: "${it}"] }],
+        [type: "Oscillation", cmd: "shakehorizon", items: [[value: 30], [value: 60], [value: 90]]]]]]
+    def a2 = appWithFan(h2, conf)
+    FakeDevice f = a2.getChildDevice("dreo-SN1")
+    assert f.getDataValue("speedRange") == "1-12" && f.getDataValue("oscillationAngles") == "30,60,90"
+    // The device list stops giving the angles: the device drops them.
+    a2.discoverDevices([list: [[deviceId: "1", sn: "SN1", model: "DR-HTF004S", deviceName: "A",
+        controlsConf: [control: [conf.controlsConf.control[0]]]]]], [:])
+    h2.settle()
+    assert f.getDataValue("speedRange") == "1-12" && f.getDataValue("oscillationAngles") == null
+    // A device missing from the list, or with no limits read, keeps its own.
+    a2.applyLimits([:])
+    a2.applyLimits([SN1: [name: "A", model: "DR-HTF004S"]])
+    assert f.getDataValue("speedRange") == "1-12"
 }
 
 Check.finish()

@@ -653,6 +653,37 @@ check("head position waits for the head to settle on DR-HPF017S") {
     app.children = []
 }
 
+check("a waiting head position doesn't hold back, drop or reorder stopping oscillation") {
+    def sent = []
+    def conn = new FakeDevice(deviceNetworkId: "dreo-connection-${app.app.id}", name: "conn")
+    conn.metaClass.sendCommand = { String sn, Map p -> sent << p }
+    app.children = [conn]
+    FakeDevice cd = new FakeDevice(id: 8, deviceNetworkId: "dreo-SN8", name: "DR-HPF017S", data: [model: "DR-HPF017S", sn: "SN8"])
+    Map s = [poweron: true, oscmode: 0, fixedconf: "0,0", cruiseconf: "90,75,-30,-75"]
+    app.dreoCommand(cd, s, "setHeadPosition", [10, 10])
+    // Oscillating again within the settle time: the new position waits, stopping oscillation doesn't.
+    s = s + [fixedconf: "10,10", oscmode: 1]
+    assert app.dreoCommand(cd, s, "setHeadPosition", [20, 20]) == [fixedconf: "20,20", oscmode: 0]
+    assert sent == [[fixedconf: "10,10"], [oscmode: 0]]
+    // A newer position (the driver already shows oscillation off) replaces only the position.
+    s = s + [oscmode: 0]
+    app.dreoCommand(cd, s, "setHeadPosition", [30, 30])
+    // Oscillation switched on meanwhile goes now, and the waiting position is
+    // dropped: sent later, it would stop the sweep.
+    app.dreoCommand(cd, s, "setOscillation", ["horizontal"])
+    hub.advance(8100)
+    app.flushHead([sn: "SN8", settle: 8])
+    assert sent == [[fixedconf: "10,10"], [oscmode: 0], [oscmode: 1]]
+    // Switching oscillation off keeps a waiting position.
+    app.dreoCommand(cd, s, "setHeadPosition", [40, 40])     // goes now
+    app.dreoCommand(cd, s, "setHeadPosition", [50, 50])     // waits
+    app.dreoCommand(cd, s, "setOscillation", ["off"])
+    hub.advance(8100)
+    app.flushHead([sn: "SN8", settle: 8])
+    assert sent.takeRight(3) == [[fixedconf: "40,40"], [oscmode: 0], [fixedconf: "50,50"]]
+    app.children = []
+}
+
 // ---------------------------------------------------------------- humidifiers
 
 // A humidifier device as the driver passes it, with data values from discovery.
@@ -705,7 +736,7 @@ check("dreoEvents: DR-HHM001S sample state") {
     assert json(e.remove("supportedModes")) == ["manual", "auto", "sleep"]
     assert e == [switch: "on", humidity: 47, targetHumidity: 60, mode: "auto", mistLevel: 6, maxMistLevel: 6,
                  operatingState: "humidifying", waterTank: "ok", display: "on", panelSound: "on", ambientLight: "on",
-                 useSinceCleaning: 0]
+                 useSinceCleaning: 0, schedules: "off"]
     assert hEvents(HHM001S + [filtertime: 75]).filterLife == 75
 }
 
@@ -806,14 +837,22 @@ check("fanLimits: a template reference or junk gives nothing, so the model table
     assert app.fanLimits([control: [[type: "Mode", items: [[text: "x", value: "high"]]]]]) == [:]
 }
 
+check("fanLimits: an Oscillation switch with no presets doesn't hide a later control's angles") {
+    Map conf = [control: [[type: "Oscillation", cmd: "hoscon", items: []]],
+        extraConfigs: [[key: "control", value: [[type: "Oscillation", cmd: "shakehorizon", items: [[value: 30], [value: 45], [value: 60], [value: 90]]]]]]]
+    assert app.fanLimits(conf).oscillationAngles == "30,45,60,90"
+    assert !app.fanLimits([control: [[type: "Oscillation", cmd: "hoscon", items: []]]]).containsKey("oscillationAngles")
+}
+
 check("fanLimits: the test DR-HPF004S keeps turbo and custom, which its table and schedule both list") {
     Map conf = fixtureDevice("digital-homesteaders", "DR-HPF004S-1").controlsConf
     assert app.fanLimits(conf, "DR-HPF004S") == [speedRange: "1-9", modes: "normal=1,natural=2,sleep=3,auto=4,turbo=5,custom=6"]
     // Without the model, only the mode buttons.
     assert app.fanLimits(conf).modes == "normal=1,natural=2,sleep=3,auto=4"
     // The test DR-HTF004S isn't in the table: its own list says 1-12, not the family's 1-9.
+    // Its Oscillation control lists the sweep-width presets (shakehorizonangle).
     assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HTF004S").controlsConf, "DR-HTF004S") ==
-        [speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=4"]
+        [speedRange: "1-12", modes: "normal=1,natural=2,sleep=3,auto=4", oscillationAngles: "30,60,90,120"]
     assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HAF001S").controlsConf, "DR-HAF001S") ==
         [speedRange: "1-4", modes: "normal=1,natural=2,sleep=3,auto=4"]
     assert app.fanLimits(fixtureDevice("digital-homesteaders", "DR-HPF008S").controlsConf, "DR-HPF008S") == [:]
@@ -874,6 +913,147 @@ check("missingDriver: Hubitat's unknown-driver exception and the stand-in's, not
     assert app.missingDriver(new IllegalArgumentException("no driver named Dreo Fan"))
     assert app.missingDriver(new RuntimeException("Device type 'Dreo Fan' in namespace 'dreo' not found"))
     assert !app.missingDriver(new IllegalArgumentException("duplicate dni dreo-SN1"))
+}
+
+// ---------------------------------------------------------------- settings shared by every kind (timers, schedules, adaptive brightness)
+
+// The test DR-HTF004S: timers as Dreo reports them, a sweep-width preset, adaptive brightness.
+@Field Map HTF004S = [poweron: true, windlevel: 5, windtype: 1, shakehorizon: true, shakehorizonangle: 60, voiceon: true,
+    lightsensoron: true, scheon: true, scheid: 7, timeron: [du: 0, ts: 1783896410], timeroff: [du: 45, ts: 1783896410]]
+
+check("settings: timers, schedules and adaptive brightness on fans, ceiling fans and humidifiers") {
+    assert cmd("DR-HTF004S", HTF004S, "setTimerOff", [30]) == [timeroff: 30]
+    assert cmd("DR-HTF004S", HTF004S, "setTimerOn", ["90"]) == [timeron: 90]
+    assert cmd("DR-HTF004S", HTF004S, "setTimerOff", [0]) == [timeroff: 0]
+    assert cmd("DR-HTF004S", HTF004S, "setTimerOff", [719]) == [timeroff: 719]
+    throwsIAE { cmd("DR-HTF004S", HTF004S, "setTimerOff", [720]) }
+    throwsIAE { cmd("DR-HTF004S", HTF004S, "setTimerOff", [-1]) }
+    throwsIAE { cmd("DR-HTF004S", HTF004S, "setTimerOff", ["soon"]) }
+    throwsIAE { cmd("DR-HTF011S", ON9, "setTimerOff", [30]) }
+    assert cmd("DR-HTF004S", HTF004S, "setSchedules", ["off"]) == [scheon: false]
+    assert cmd("DR-HTF004S", HTF004S, "setAdaptiveBrightness", ["off"]) == [lightsensoron: false]
+    throwsIAE { cmd("DR-HTF011S", ON9, "setSchedules", ["off"]) }
+    throwsIAE { cmd("DR-HTF011S", ON9, "setAdaptiveBrightness", ["on"]) }
+    throwsIAE { cmd("DR-HTF004S", HTF004S, "setSchedules", ["later"]) }
+    // Ceiling fans and humidifiers share them.
+    assert cmd("DR-HCF007S", CEIL + [timeroff: [du: 0, ts: 1], scheon: true], "setTimerOff", [60]) == [timeroff: 60]
+    assert cmd("DR-HCF007S", CEIL + [scheon: true], "setSchedules", ["on"]) == [scheon: true]
+    assert hCmd(HHM001S + [timeron: [du: 0, ts: 1]], "setTimerOn", [15]) == [timeron: 15]
+    assert hCmd(HHM001S, "setSchedules", ["on"]) == [scheon: true]
+    assert hCmd(HHM001S + [lightsensoron: false], "setAdaptiveBrightness", ["on"]) == [lightsensoron: true]
+    throwsIAE { hCmd(HHM001S, "setAdaptiveBrightness", ["on"]) }
+}
+
+check("dreoEvents: timers (reported {du} or a sent number), schedules, adaptive brightness") {
+    Map e = events("DR-HTF004S", HTF004S)
+    assert e.subMap(["timerOn", "timerOff", "schedules", "adaptiveBrightness"]) ==
+        [timerOn: 0, timerOff: 45, schedules: "on", adaptiveBrightness: "on"]
+    // A command's own params fold in as plain minutes until the fan reports.
+    assert events("DR-HTF004S", HTF004S + [timeroff: 30, scheon: false]).subMap(["timerOff", "schedules"]) == [timerOff: 30, schedules: "off"]
+    assert !events("DR-HTF011S", ON9).keySet().any { it in ["timerOn", "timerOff", "schedules", "adaptiveBrightness"] }
+    Map c = events("DR-HCF007S", CEIL + [timeroff: [du: 10, ts: 1], scheon: true])
+    assert c.timerOff == 10 && c.schedules == "on"
+    assert hEvents(HHM001S + [lightsensoron: false, timeroff: [du: 5, ts: 1]]).subMap(["adaptiveBrightness", "timerOff"]) ==
+        [adaptiveBrightness: "off", timerOff: 5]
+}
+
+// ---------------------------------------------------------------- oscillation angle presets (tower fans)
+
+check("anglesOf and profile angles: the device list, else the presets, plus a reported angle") {
+    assert app.anglesOf("30,60,90,120") == [30, 60, 90, 120]
+    assert app.anglesOf("30,x") == null && app.anglesOf("30") == null && app.anglesOf(null) == null
+    assert prof("DR-HTF004S").angles == [30, 60, 90, 120]
+    assert app.profile("DR-HTF004S", [:], [:], [oscillationAngles: "30,60,90,120,150"]).angles == [30, 60, 90, 120, 150]
+    assert prof("DR-HTF004S", [shakehorizonangle: 150]).angles == [30, 60, 90, 120, 150]
+    assert prof("DR-HTF004S", [shakehorizonangle: 60]).angles == [30, 60, 90, 120]
+}
+
+check("setOscillationAngle: a preset only, on fans that report the angle") {
+    assert cmd("DR-HTF004S", HTF004S, "setOscillationAngle", [90]) == [shakehorizonangle: 90]
+    assert cmd("DR-HTF004S", HTF004S, "setOscillationAngle", ["120"]) == [shakehorizonangle: 120]
+    throwsIAE { cmd("DR-HTF004S", HTF004S, "setOscillationAngle", [45]) }
+    throwsIAE { cmd("DR-HTF004S", HTF004S, "setOscillationAngle", ["wide"]) }
+    throwsIAE { cmd("DR-HTF011S", ON9, "setOscillationAngle", [60]) }
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setOscillationAngle", [60]) }
+}
+
+check("dreoEvents: oscillationAngle and its presets") {
+    Map e = events("DR-HTF004S", HTF004S)
+    assert e.oscillationAngle == 60 && json(e.supportedOscillationAngles) == [30, 60, 90, 120]
+    assert !events("DR-HPF004S", HPF004S).containsKey("oscillationAngle")
+}
+
+// ---------------------------------------------------------------- sweep presets and 5° limits (two-axis fans)
+
+check("setOscillationSweep: horizontal centred, vertical from the lowest tilt, within the head's reach") {
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [90]) == [cruiseconf: "90,45,-30,-45"]
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [150]) == [cruiseconf: "90,75,-30,-75"]
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [null, 60]) == [cruiseconf: "30,75,-30,-75"]
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationSweep", ["", "120"]) == [cruiseconf: "90,75,-30,-75"]
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [60, 30]) == [cruiseconf: "0,30,-30,-30"]
+    // Widths go in 10° (horizontal) and 5° (vertical) steps.
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [94, 33]) == [cruiseconf: "5,45,-30,-45"]
+    // DR-HPF008S reaches ±60° across.
+    assert cmd("DR-HPF008S", HPF008S, "setOscillationSweep", [120]) == [cruiseconf: "90,60,-30,-60"]
+    throwsIAE { cmd("DR-HPF008S", HPF008S, "setOscillationSweep", [150]) }
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [20]) }
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [null, 130]) }
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setOscillationSweep", []) }
+    throwsIAE { cmd("DR-HPF004S", HPF004S, "setOscillationSweep", [null, null]) }
+    throwsIAE { cmd("DR-HTF011S", ON9, "setOscillationSweep", [90]) }
+}
+
+check("setOscillationRange rounds limits to 5°") {
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationRange", [-47, 43, 2, 58]) == [cruiseconf: "60,45,0,-45"]
+    assert cmd("DR-HPF004S", HPF004S, "setOscillationRange", [-73]) == [cruiseconf: "90,75,-30,-75"]
+    assert app.roundTo(-47, 5) == -45 && app.roundTo(43, 5) == 45 && app.roundTo(94, 10) == 90 && app.roundTo(95, 10) == 100
+}
+
+// ---------------------------------------------------------------- temperature offset, mist, ring effect speed
+
+check("setTemperatureOffset: clamped to ±10, on fans that report tempoffset") {
+    assert cmd("DR-HPF008S", HPF008S + [tempoffset: -5], "setTemperatureOffset", [3]) == [tempoffset: 3]
+    assert cmd("DR-HPF008S", HPF008S + [tempoffset: -5], "setTemperatureOffset", ["-2"]) == [tempoffset: -2]
+    assert cmd("DR-HPF008S", HPF008S + [tempoffset: -5], "setTemperatureOffset", [25]) == [tempoffset: 10]
+    assert cmd("DR-HPF008S", HPF008S + [tempoffset: -5], "setTemperatureOffset", [-25]) == [tempoffset: -10]
+    throwsIAE { cmd("DR-HPF008S", HPF008S, "setTemperatureOffset", [3]) }
+    throwsIAE { cmd("DR-HPF008S", HPF008S + [tempoffset: -5], "setTemperatureOffset", ["warm"]) }
+    assert events("DR-HPF008S", HPF008S + [tempoffset: -5]).temperatureOffset == -5
+    assert !events("DR-HPF008S", HPF008S).containsKey("temperatureOffset")
+}
+
+check("setMist on misting tower fans") {
+    assert cmd("DR-HTF021S", ON9 + [miston: false], "setMist", ["on"]) == [miston: true]
+    assert cmd("DR-HTF021S", ON9 + [miston: true], "setMist", ["off"]) == [miston: false]
+    throwsIAE { cmd("DR-HTF011S", ON9, "setMist", ["on"]) }
+    assert events("DR-HTF021S", ON9 + [miston: true]).mist == "on"
+    assert !events("DR-HTF011S", ON9).containsKey("mist")
+}
+
+check("light ring effect speed (atmspeed 1-3)") {
+    assert cmd("DR-HPF008S", RING + [atmspeed: 2], "ring.setEffectSpeed", ["high"]) == [atmspeed: 3]
+    assert cmd("DR-HPF008S", RING + [atmspeed: 2], "ring.setEffectSpeed", ["Low"]) == [atmspeed: 1]
+    // A dark ring lights up, as with any other ring change.
+    assert cmd("DR-HPF008S", RING + [atmspeed: 2, atmon: false], "ring.setEffectSpeed", ["medium"]) == [atmspeed: 2, atmon: true]
+    throwsIAE { cmd("DR-HPF008S", RING + [atmspeed: 2], "ring.setEffectSpeed", ["fast"]) }
+    throwsIAE { cmd("DR-HPF008S", RING, "ring.setEffectSpeed", ["high"]) }
+    assert events("DR-HPF008S", RING + [atmspeed: 2])."ring.effectSpeed" == "medium"
+    assert events("DR-HPF008S", RING + [atmspeed: 3])."ring.effectSpeed" == "high"
+    assert !events("DR-HPF008S", RING + [atmspeed: 9]).containsKey("ring.effectSpeed")
+    assert !events("DR-HPF008S", RING).containsKey("ring.effectSpeed")
+}
+
+// ---------------------------------------------------------------- humidifier display and light levels
+
+check("humidifierCommand: display and ambient light come back at the level last seen on") {
+    Map p = app.humidifierProfile(hum())
+    assert app.humidifierCommand(p, HHM001S + [ledlevel: 0], "setDisplay", ["on"], [ledlevelOn: 3]) == [ledlevel: 3]
+    assert app.humidifierCommand(p, HHM001S + [rgblevel: 0], "setAmbientLight", ["on"], [rgblevelOn: 1]) == [rgblevel: 1]
+    // Nothing remembered (or a zero): the Dreo app's middle level.
+    assert app.humidifierCommand(p, HHM001S + [ledlevel: 0], "setDisplay", ["on"], [ledlevelOn: 0]) == [ledlevel: 2]
+    assert app.humidifierCommand(p, HHM001S + [ledlevel: 0], "setDisplay", ["on"], [:]) == [ledlevel: 2]
+    assert app.humidifierCommand(p, HHM001S + [ledlevel: 0], "setDisplay", ["on"]) == [ledlevel: 2]
+    assert app.humidifierCommand(p, HHM001S, "setDisplay", ["off"], [ledlevelOn: 3]) == [ledlevel: 0]
 }
 
 Check.finish()

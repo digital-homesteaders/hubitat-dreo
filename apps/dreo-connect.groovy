@@ -18,6 +18,7 @@
  */
 
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.Field
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -62,6 +63,8 @@ preferences {
 @Field static final ConcurrentHashMap<Long, Map> AUTH = new ConcurrentHashMap<>()
 // A sign-in older than this is assumed lost and may be started again.
 @Field static final long LOGIN_STALE_MS = 60 * 1000L
+// After a sign-in fails (no answer, not a rejection), try the cloud connection again this much later.
+@Field static final int LOGIN_RETRY_S = 60
 
 // Commands for a device showing offline, held while a refresh checks whether
 // it really is (see dreoCommand), keyed by serial number. In memory only: they
@@ -200,6 +203,20 @@ preferences {
 @Field static final List HUM_MIST_RANGE = [1, 6]
 // Humidifier `wrong` codes meaning the tank is empty or off its base.
 @Field static final List HUM_TANK_EMPTY = [1, 4]
+// Oscillation angle presets (shakehorizonangle) when a tower fan's device list doesn't give them.
+@Field static final List OSC_ANGLES = [30, 60, 90, 120]
+// On and off timers (timeron, timeroff) run for at most this many minutes, as in the Dreo app.
+@Field static final int TIMER_MAX_MINUTES = 719
+// Temperature calibration (tempoffset) goes this far either way, in the fan's own unit.
+@Field static final int TEMP_OFFSET_MAX = 10
+// Light ring effect speeds (atmspeed 1, 2, 3), confirmed on a DR-HPF008S.
+@Field static final List RING_SPEEDS = ["low", "medium", "high"]
+// The rooms list is paged; this many pages is more homes than any account has.
+@Field static final int ROOM_PAGES_MAX = 10
+// Seconds between each device's refresh in the half-hourly poll, so they don't all hit Dreo at once.
+@Field static final int POLL_SPREAD_S = 2
+// Device data values that discovery sets from the device list (fanLimits, humidifierLimits).
+@Field static final List LIMIT_KEYS = ["speedRange", "modes", "oscillationAngles", "lightRing", "humidityRange", "mistRange"]
 
 // ---------------------------------------------------------------- pages
 
@@ -380,7 +397,7 @@ void initialize() {
         // Re-read the device list so devices pick up speed ranges, modes and
         // humidifier limits from Dreo (e.g. after pasting a newer app) without
         // a visit to Choose devices.
-        if (!state.discovering) startDiscovery()
+        if (!discoveryRunning()) startDiscovery()
     } else {
         getConnection()?.disconnect()
     }
@@ -434,23 +451,40 @@ private boolean missingDriver(Throwable e) {
 
 // Names light children were created with before 0.3 -> today's (see lightHello).
 @Field static final Map OLD_CHILD_NAMES = ["Dreo Ceiling Light": "Dreo Ceiling Fan Light", "Dreo Light Ring": "Dreo Fan Light Ring"]
+// Light child drivers and labels by the child's DNI suffix (the `child` key of dreoEvents).
+@Field static final Map LIGHT_CHILDREN = [light: [driver: "Dreo Ceiling Fan Light", label: "Light"], ring: [driver: "Dreo Fan Light Ring", label: "Light Ring"]]
 
-/** Whether a fan's light child driver has been found missing since the last Done (see lightDriverFailed). */
-boolean lightDriverMissing(cd, String driver) {
-    return driver in missingLightDrivers(cd)
+/**
+ * The light child a fan should add for `kind` ("light" or "ring"): its driver,
+ * DNI and label. Null while adding it has failed since the last Done (see
+ * lightChildFailed). The fan driver adds it, since only a device can add its
+ * own children.
+ */
+Map lightChild(cd, String kind) {
+    Map c = LIGHT_CHILDREN[kind]
+    if (!c || childFailures(cd).containsKey(c.driver)) return null
+    return [driver: c.driver, dni: "${cd.deviceNetworkId}-${kind}".toString(), label: "${cd.displayName} ${c.label}".toString()]
 }
 
 /**
  * A fan could not add a light child: logged once and noted in the fan's
- * `missingDrivers` data value, which the main page shows. Done clears the
+ * `childFailures` data value, which the main page shows. Done clears the
  * note (checkDrivers), so the fan's next report tries again.
  */
-void lightDriverFailed(cd, String driver, String message) {
-    List missing = missingLightDrivers(cd)
-    if (driver in missing) return
-    cd.updateDataValue("missingDrivers", (missing + driver).join(", "))
-    log.error "Dreo: could not add the '${driver}' device for ${cd.displayName}: ${message} (is the driver installed? Install it, then press Done)"
+void lightChildFailed(cd, String driver, Throwable e) {
+    Map failures = childFailures(cd)
+    if (failures.containsKey(driver)) return
+    boolean noDriver = missingDriver(e)
+    // "" for a missing driver, else what went wrong.
+    failures[driver] = noDriver ? "" : (e.message ?: e.class.simpleName)
+    cd.updateDataValue("childFailures", JsonOutput.toJson(failures))
+    log.error "Dreo: could not add the '${driver}' device for ${cd.displayName}: ${e.message}" +
+        (noDriver ? " (is the driver installed? Install it, then press Done)" : " (press Done to try again)")
 }
+
+// Fan drivers from before lightChild call these until they are re-pasted.
+boolean lightDriverMissing(cd, String driver) { childFailures(cd).containsKey(driver) }
+void lightDriverFailed(cd, String driver, String message) { lightChildFailed(cd, driver, new Exception(message)) }
 
 /** A fan's light child on Done: a pre-0.3 name is updated, and its driver version checked like the fan's. */
 List lightHello(c, String appVersion) {
@@ -464,25 +498,43 @@ List lightHello(c, String appVersion) {
     }
 }
 
-private List missingLightDrivers(cd) {
-    return (cd.getDataValue("missingDrivers") ?: "").split(", ").findAll { it }
+/** A fan's light children that couldn't be added since the last Done: driver -> error ("" for a missing driver). */
+private Map childFailures(cd) {
+    String v = cd.getDataValue("childFailures")
+    try {
+        def m = v ? new JsonSlurper().parseText(v) : null
+        return m instanceof Map ? m : [:]
+    } catch (e) {
+        return [:]
+    }
 }
 
 /** The main page's entries for light children that couldn't be added. */
 private List missingChildDrivers() {
-    return getFanDevices().findAll { it.getDataValue("missingDrivers") }.collect { cd ->
-        "${cd.displayName} needs ${missingLightDrivers(cd).collect { "'${it}'" }.join(' and ')}".toString()
+    return getFanDevices().collectMany { cd ->
+        childFailures(cd).collect { d, err ->
+            (err ? "${cd.displayName} could not add '${d}' (${err})" : "${cd.displayName} needs '${d}'").toString()
+        }
     }
 }
 
 /** Limits read at discovery (speed range, modes, humidifier ranges) also reach devices added earlier. */
 private void applyLimits(Map found) {
     getFanDevices().each { cd ->
-        Map limits = found[cd.getDataValue("sn")]?.limits ?: [:]
+        // Not listed, or its limits couldn't be read: keep what the device has.
+        Map limits = found[cd.getDataValue("sn")]?.limits
+        if (limits == null) return
         boolean changed = false
         limits.each { k, v ->
             if (cd.getDataValue(k) != v) {
                 cd.updateDataValue(k, v)
+                changed = true
+            }
+        }
+        // A limit the device list no longer gives goes, so the model table applies again.
+        (LIMIT_KEYS - limits.keySet()).each { String k ->
+            if (cd.getDataValue(k) != null) {
+                cd.removeDataValue(k)
                 changed = true
             }
         }
@@ -504,8 +556,11 @@ String dreoVersion() { VERSION }
  * children). A driver too old to answer is from an earlier version too.
  */
 private void checkDrivers() {
-    // A light driver noted missing is tried again after Done (see lightDriverFailed).
-    getFanDevices().each { if (it.getDataValue("missingDrivers")) it.removeDataValue("missingDrivers") }
+    // A light child that failed is tried again after Done (see lightChildFailed);
+    // missingDrivers is the note's older name.
+    getFanDevices().each { cd ->
+        ["childFailures", "missingDrivers"].each { if (cd.getDataValue(it)) cd.removeDataValue(it) }
+    }
     List odd = []
     getChildDevices().each { cd ->
         try {
@@ -580,7 +635,7 @@ private Map apiHeaders() {
 private void apiGet(String path, Map query, String callback, Map cbData = [:], boolean retried = false) {
     Map req = [path: path, query: query ?: [:], cb: callback, data: cbData, retried: retried]
     if (!currentToken()) {
-        login("apiReplay", req)
+        login("apiReplay", req, "apiFailed")
         return
     }
     req.tokenAt = currentTokenAt()
@@ -596,6 +651,11 @@ def apiReplay(Map req) {
     apiGet(req.path, req.query, req.cb, req.data ?: [:], true)
 }
 
+/** The sign-in a request waited for failed or was skipped: its callback gets null, as for any failed request. */
+def apiFailed(Map req) {
+    "${req.cb}"(null, req.data ?: [:])
+}
+
 def apiGetDone(resp, Map req) {
     if (resp.status == 401 && !req.retried) {
         // Sign in again, unless another request already replaced the token.
@@ -604,7 +664,7 @@ def apiGetDone(resp, Map req) {
         } else {
             log.info "Dreo: ${req.path} returned 401, signing in again"
             dropToken()
-            login("apiReplay", req)
+            login("apiReplay", req, "apiFailed")
         }
         return
     }
@@ -631,16 +691,20 @@ private String errorText(resp) {
 }
 
 /**
- * Sign in, then call `then(thenData)`. Callers arriving while a sign-in is
- * already under way wait for that one instead of starting their own.
+ * Sign in, then call `then(thenData)`, or `failed(thenData)` if the sign-in
+ * fails or can't be tried, so no caller is left waiting. Callers arriving
+ * while a sign-in is already under way wait for that one instead of starting
+ * their own.
  */
-private void login(String then, Map thenData, String region = null, int depth = 0) {
+private void login(String then, Map thenData, String failed = null, String region = null, int depth = 0) {
     if (!settings.email || !passwordHash()) {
         state.status = "Enter your Dreo email and password"
+        if (failed) "${failed}"(thenData ?: [:])
         return
     }
     if (state.authFailedAt && now() - (state.authFailedAt as Long) < AUTH_RETRY_MS) {
         logDebug "Sign-in skipped: Dreo rejected the credentials recently"
+        if (failed) "${failed}"(thenData ?: [:])
         return
     }
     if (depth == 0) {
@@ -651,7 +715,7 @@ private void login(String then, Map thenData, String region = null, int depth = 
                 a.loginAt = now()
                 a.waiters = []
             }
-            if (then) a.waiters << [then: then, thenData: thenData ?: [:]]
+            if (then) a.waiters << [then: then, thenData: thenData ?: [:], failed: failed]
             if (running) {
                 logDebug "Sign-in already under way; waiting for it"
                 return
@@ -692,21 +756,21 @@ def loginDone(resp, Map ctx) {
         state.authFailedAt = now()
         state.status = "Dreo rejected the email or password (${json.msg ?: json.code}). Will retry in 30 minutes, or enter the password again."
         log.warn "Dreo: ${state.status}"
-        finishLogin()
         // Without a sign-in the cloud connection can't come back.
         if (getConnection()?.currentValue("connection") != "connected") cloudDown("Dreo rejected the sign-in")
+        loginFailed()
         return
     }
     if (resp.status != 200 || !json?.data?.access_token) {
         state.status = "Sign-in failed: HTTP ${resp.status} ${errorText(resp) ?: ''}".trim()
         log.warn "Dreo: ${state.status}"
-        finishLogin()
+        loginFailed()
         return
     }
     String accountRegion = json.data.region
     if (REGION_HOST[accountRegion] && accountRegion != ctx.region && ctx.depth == 0) {
         log.info "Dreo: account is in region ${accountRegion}, signing in there"
-        login(null, null, accountRegion, 1)
+        login(null, null, null, accountRegion, 1)
         return
     }
     state.region = ctx.region
@@ -723,7 +787,18 @@ def loginDone(resp, Map ctx) {
     finishLogin().each { Map w -> "${w.then}"(w.thenData ?: [:]) }
 }
 
+/** End a failed sign-in, telling everyone who waited for it. */
+private void loginFailed() {
+    finishLogin().each { Map w -> if (w.failed) "${w.failed}"(w.thenData ?: [:]) }
+}
+
 // ---------------------------------------------------------------- discovery
+
+/** Whether a discovery is under way; one older than DISCOVERY_TIMEOUT_MS has failed (e.g. its sign-in did). */
+private boolean discoveryRunning() {
+    Long started = state.discovering as Long
+    return started && now() - started <= DISCOVERY_TIMEOUT_MS
+}
 
 private void startDiscovery() {
     state.discovering = now()
@@ -755,7 +830,7 @@ def discoverDevices(data, Map ctx) {
     state.discovered = found
     state.unsupported = unsupported
     applyLimits(found)
-    apiGet(PATH_ROOMS, [pageNo: 1, pageSize: 50], "discoverRooms")
+    apiGet(PATH_ROOMS, [pageNo: 1, pageSize: 50], "discoverRooms", [page: 1])
 }
 
 def discoverRooms(data, Map ctx) {
@@ -770,6 +845,13 @@ def discoverRooms(data, Map ctx) {
             }
         }
         state.discovered = found
+        // The list is paged by home; read the next page if there is one.
+        int page = (ctx?.page ?: 1) as int
+        int pages = data.totalPage instanceof Number ? data.totalPage as int : 1
+        if (page < pages && page < ROOM_PAGES_MAX) {
+            apiGet(PATH_ROOMS, [pageNo: page + 1, pageSize: 50], "discoverRooms", [page: page + 1])
+            return
+        }
     }
     state.discoveredAt = now()
     state.remove("discovering")
@@ -779,7 +861,7 @@ def discoverRooms(data, Map ctx) {
 
 def appButtonHandler(String btn) {
     if (btn == "rediscover") {
-        if (!state.discovering) startDiscovery()
+        if (!discoveryRunning()) startDiscovery()
         return
     }
     if (btn == "dumpRaw") {
@@ -818,8 +900,19 @@ private String shortSn(def sn) {
 
 // ---------------------------------------------------------------- state refresh
 
+/** Re-read every device, a few seconds apart rather than all at once. */
 def pollAll() {
-    getFanDevices().each { refreshFan(it.getDataValue("sn")) }
+    // A cloud connection still down (e.g. a sign-in failed while reconnecting) is tried again here at the latest.
+    if (getConnection() && getConnection().currentValue("connection") != "connected") connectSocket()
+    getFanDevices().eachWithIndex { cd, int i ->
+        String sn = cd.getDataValue("sn")
+        if (i == 0) refreshFan(sn)
+        else runIn(i * POLL_SPREAD_S, "pollOne", [data: [sn: sn], overwrite: false])
+    }
+}
+
+def pollOne(Map data) {
+    refreshFan(data.sn as String)
 }
 
 /** Re-read one fan's full state over REST. Called by the fan's refresh(). */
@@ -928,12 +1021,25 @@ void connectSocket(Map data = [:]) {
     def conn = getConnection()
     if (!conn) return
     if (!currentToken()) {
-        login("connectSocket", [:])
+        login("connectSocket", [:], "connectFailed")
         return
     }
     String host = REGION_HOST[state.region ?: "NA"] ?: "us"
     String token = URLEncoder.encode(state.token as String, "UTF-8")
     conn.connect("wss://wsb-${host}.dreo-tech.com/websocket?accessToken=${token}&timestamp=${now()}")
+}
+
+/**
+ * The sign-in connectSocket needed failed or was skipped, and nothing else
+ * would reconnect: try again a minute later, or once Dreo's rejection of the
+ * password has had its 30 minutes.
+ */
+def connectFailed(Map data) {
+    def conn = getConnection()
+    if (!conn || !getFanDevices() || conn.currentValue("connection") == "connected") return
+    Long rejectedAt = state.authFailedAt as Long
+    int wait = rejectedAt ? (int) ((AUTH_RETRY_MS - (now() - rejectedAt)) / 1000) + 1 : LOGIN_RETRY_S
+    runIn(Math.max(LOGIN_RETRY_S, wait), "connectSocket")
 }
 
 /** The connection device opened the socket. */
@@ -1046,10 +1152,18 @@ List dreoEvents(cd, Map s, Map opts = [:]) {
             ev << [name: "display", value: display]
             ev << [name: "supportedDisplay", value: JsonOutput.toJson(s.lightmode instanceof Number ? DISPLAY_MODES : ["off", "on"])]
         }
+        // shakehorizonangle: the sweep width of a tower fan, from a preset list.
+        if (s.shakehorizonangle instanceof Number) {
+            ev << [name: "oscillationAngle", value: s.shakehorizonangle as int, unit: "°"]
+            ev << [name: "supportedOscillationAngles", value: JsonOutput.toJson(p.angles)]
+        }
+        if (s.tempoffset instanceof Number) ev << [name: "temperatureOffset", value: s.tempoffset as int, unit: "°"]
+        if (s.containsKey("miston")) ev << [name: "mist", value: s.miston ? "on" : "off"]
     }
     if (s.containsKey("voiceon")) ev << [name: "panelSound", value: s.voiceon ? "on" : "off"]
     else if (s.containsKey("muteon")) ev << [name: "panelSound", value: s.muteon ? "off" : "on"]
     if (s.containsKey("childlockon")) ev << [name: "childLock", value: s.childlockon ? "on" : "off"]
+    ev.addAll(settingEvents(s))
 
     BigDecimal temp = temperatureOf(s, location.temperatureScale)
     if (temp != null) ev << [name: "temperature", value: temp, unit: "°${location.temperatureScale}"]
@@ -1086,7 +1200,7 @@ private Map sendNow(cd, Map s, String cmd, List args, Map opts) {
     Map p = humidifier ? humidifierProfile(cd) : fanProfile(cd, s, opts)
     Map params
     try {
-        params = humidifier ? humidifierCommand(p, s, cmd, args ?: []) : buildCommand(p, s, cmd, args ?: [], opts)
+        params = humidifier ? humidifierCommand(p, s, cmd, args ?: [], opts) : buildCommand(p, s, cmd, args ?: [], opts)
     } catch (IllegalArgumentException e) {
         log.warn "Dreo: ${cd.displayName}: ${e.message}"
         return null
@@ -1104,9 +1218,28 @@ private Map sendNow(cd, Map s, String cmd, List args, Map opts) {
     }
     logDebug "${cd.displayName}: ${cmd} ${args} -> ${params}"
     String sn = cd.getDataValue("sn")
-    if (params.containsKey("fixedconf") && p.settle && !headReady(sn, p.settle as int, params)) return params
+    // Only the position waits for the head to settle (see headReady): the rest,
+    // such as stopping oscillation, goes now, in order with later commands.
+    if (params.containsKey("fixedconf") && p.settle && !headReady(sn, p.settle as int, [fixedconf: params.fixedconf])) {
+        Map rest = params.findAll { k, v -> k != "fixedconf" }
+        if (rest) conn.sendCommand(sn, rest)
+        return params
+    }
+    // Oscillating again means the position still waiting is no longer wanted:
+    // sent later, it would stop the sweep. (The fan's report shows where the head is.)
+    if (p.settle && startsOscillation(params)) dropHeadPosition(sn)
     conn.sendCommand(sn, params)
     return params
+}
+
+private boolean startsOscillation(Map params) {
+    return (params.oscmode instanceof Number && (params.oscmode as int) > 0) || (OSC_KEYS + ["voscon"]).any { params[it] == true }
+}
+
+private void dropHeadPosition(String sn) {
+    Map h = HEAD.get(sn)
+    if (h == null) return
+    synchronized (h) { h.remove("pending") }
 }
 
 private Map head(String sn) {
@@ -1178,7 +1311,7 @@ private List driversFor(String model, Map limits = null) {
 /** A fan device's profile, with the speed range and modes read from its controlsConf at discovery. */
 private Map fanProfile(cd, Map s, Map opts) {
     return profile(cd.getDataValue("model"), s, opts,
-        [speedRange: cd.getDataValue("speedRange"), modes: cd.getDataValue("modes")])
+        [speedRange: cd.getDataValue("speedRange"), modes: cd.getDataValue("modes"), oscillationAngles: cd.getDataValue("oscillationAngles")])
 }
 
 /**
@@ -1213,10 +1346,13 @@ private Map profile(String model, Map s, Map opts, Map conf = [:]) {
     [head ? head[0] : null, osc ? osc[0] : null, osc ? osc[2] : null].findAll { it != null }.each { int a ->
         v = [Math.min(v[0] as int, a), Math.max(v[1] as int, a)]
     }
+    // Oscillation angle presets (tower fans), plus any angle the fan itself reports.
+    List angles = anglesOf(conf?.oscillationAngles as String) ?: OSC_ANGLES
+    if (s.shakehorizonangle instanceof Number && !((s.shakehorizonangle as int) in angles)) angles = (angles + [s.shakehorizonangle as int]).sort()
     return [
         kind: kind, min: min, max: max, steps: max - min + 1,
         modes: modes, powerKey: powerKey, modeKey: modeKey,
-        ring: m.ring ?: [1, 5], h: h, v: v, settle: m.settle ?: 0,
+        ring: m.ring ?: [1, 5], h: h, v: v, settle: m.settle ?: 0, angles: angles,
     ]
 }
 
@@ -1270,9 +1406,23 @@ Map fanLimits(def conf, String model = null) {
         scheduled.each { add(it[0], it[1]) }
     }
     if (modes) out.modes = modes.sort { it[1] }.collect { "${it[0]}=${it[1]}" }.join(",")
+    // Oscillation angle presets: the numeric items of an Oscillation control
+    // (shakehorizonangle on tower fans). Some Oscillation controls are just a
+    // switch with no items (hoscon), so the first one with presets counts.
+    Closure<List> presets = { c -> c.items.findAll { it instanceof Map && "${it.value}" ==~ /\d+/ }.collect { "${it.value}" as int }.unique().sort() }
+    List angles = (controls + extra).findAll { it instanceof Map && it.items instanceof List && (it.type == "Oscillation" || "${it.cmd}" == "shakehorizon") }
+        .collect { presets(it) }.find { it.size() >= 2 }
+    if (angles) out.oscillationAngles = angles.join(",")
     // A light ring is a control whose command is an atm* key (CFAtmosphere on ceiling fans).
     if ((controls + extra).any { it instanceof Map && ("${it.cmd}".startsWith("atm") || "${it.type}".toLowerCase().contains("atmosphere")) }) out.lightRing = "true"
     return out
+}
+
+/** Oscillation angles as fanLimits stores them ("30,60,90,120"), as a list; null if absent or garbled. */
+List anglesOf(String v) {
+    if (!v) return null
+    List out = v.split(",").collect { it.trim() ==~ /\d+/ ? it.trim() as int : null }
+    return out.every { it != null } && out.size() >= 2 ? out : null
 }
 
 /** Modes as fanLimits stores them, as [id, value] pairs; null if absent or garbled. */
@@ -1408,7 +1558,32 @@ private List ringEvents(Map p, Map s, Map opts) {
         if (effect) ev << [child: "ring", name: "effectName", value: effect]
         ev << [child: "ring", name: "lightEffects", value: JsonOutput.toJson(RING_EFFECTS)]
     }
+    if (s.atmspeed instanceof Number && (s.atmspeed as int) in 1..RING_SPEEDS.size()) {
+        ev << [child: "ring", name: "effectSpeed", value: RING_SPEEDS[(s.atmspeed as int) - 1]]
+    }
     return ev
+}
+
+/**
+ * Events for settings any Dreo device kind may report: the on and off timers
+ * (minutes left; Dreo sends {du, ts}, a command of ours just the minutes), the
+ * schedules switch and adaptive display brightness.
+ */
+private List settingEvents(Map s) {
+    List ev = []
+    Integer on = timerMinutes(s.timeron)
+    Integer off = timerMinutes(s.timeroff)
+    if (on != null) ev << [name: "timerOn", value: on, unit: "min"]
+    if (off != null) ev << [name: "timerOff", value: off, unit: "min"]
+    if (s.containsKey("scheon")) ev << [name: "schedules", value: s.scheon ? "on" : "off"]
+    if (s.containsKey("lightsensoron")) ev << [name: "adaptiveBrightness", value: s.lightsensoron ? "on" : "off"]
+    return ev
+}
+
+/** Minutes of a timer value: {du: minutes, ts: ...} as reported, or the plain number a command sent. */
+private Integer timerMinutes(def v) {
+    if (v instanceof Map) return v.du instanceof Number ? v.du as int : null
+    return v instanceof Number ? v as int : null
 }
 
 /** Hue and saturation on Hubitat's 0-100 scales to a 24-bit RGB int, at full value. */
@@ -1450,6 +1625,36 @@ private int clamp(def v, int lo, int hi) {
     return Math.max(lo, Math.min(hi, Math.round(v as double) as int))
 }
 
+/** `v` rounded to the nearest multiple of `step`. */
+private int roundTo(int v, int step) {
+    return (int) Math.round(v / (double) step) * step
+}
+
+/**
+ * Params for the settings every device kind may have (see settingEvents):
+ * the on and off timers, the schedules switch and adaptive brightness. Null
+ * when `cmd` is not one of them. Throws IllegalArgumentException for bad input.
+ */
+private Map settingCommand(Map s, String cmd, List args) {
+    def a = args ? args[0] : null
+    switch (cmd) {
+        case "setSchedules":
+            if (!s.containsKey("scheon")) throw new IllegalArgumentException("this device has no schedules switch")
+            return [scheon: onOffArg(a, "schedules")]
+        case "setAdaptiveBrightness":
+            if (!s.containsKey("lightsensoron")) throw new IllegalArgumentException("this device has no adaptive brightness setting")
+            return [lightsensoron: onOffArg(a, "adaptive brightness")]
+        case "setTimerOn":
+        case "setTimerOff":
+            String key = cmd == "setTimerOn" ? "timeron" : "timeroff"
+            if (!s.containsKey(key)) throw new IllegalArgumentException("this device has no ${cmd == 'setTimerOn' ? 'on' : 'off'} timer")
+            int minutes = intArg(a, "minutes")
+            if (minutes < 0 || minutes > TIMER_MAX_MINUTES) throw new IllegalArgumentException("timer must be 0 to ${TIMER_MAX_MINUTES} minutes (0 cancels it)")
+            return [(key): minutes]
+    }
+    return null
+}
+
 /** Params for a fan command. Throws IllegalArgumentException for bad input. */
 private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
     def a = args ? args[0] : null
@@ -1458,6 +1663,8 @@ private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
     // Speed or mode changes on a fan that is off also switch it on.
     Closure<Map> wake = { Map m -> on ? m : power(true) + m }
 
+    Map common = settingCommand(s, cmd, args)
+    if (common) return common
     switch (cmd) {
         case "on": return power(true)
         case "off": return power(false)
@@ -1522,9 +1729,9 @@ private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
         case "setOscillationRange":
             List osc = confParts(s.cruiseconf, 4)
             if (!osc || p.kind == "ceiling") throw new IllegalArgumentException("this fan has no oscillation range setting")
-            // Arguments: left, right, bottom, top; an empty one keeps that limit.
+            // Arguments: left, right, bottom, top; an empty one keeps that limit. Limits go in 5° steps.
             Closure<Integer> arg = { int i, int cur, List range, String what ->
-                args.size() > i && args[i] != null && args[i] != "" ? clamp(intArg(args[i], what), range[0], range[1]) : cur
+                args.size() > i && args[i] != null && args[i] != "" ? clamp(roundTo(intArg(args[i], what), 5), range[0], range[1]) : cur
             }
             int left = arg(0, osc[3], p.h, "left angle")
             int right = arg(1, osc[1], p.h, "right angle")
@@ -1536,6 +1743,41 @@ private Map buildCommand(Map p, Map s, String cmd, List args, Map opts) {
         case "setChildLock":
             if (!s.containsKey("childlockon")) throw new IllegalArgumentException("this fan has no child lock")
             return [childlockon: onOffArg(a, "child lock")]
+        case "setOscillationAngle":
+            if (!(s.shakehorizonangle instanceof Number) || p.kind == "ceiling") throw new IllegalArgumentException("this fan has no oscillation angle setting")
+            int angle = intArg(a, "angle")
+            if (!(angle in p.angles)) throw new IllegalArgumentException("angle must be one of ${p.angles}")
+            return [shakehorizonangle: angle]
+        case "setOscillationSweep":
+            // The Dreo app's quick presets: a horizontal width centred straight
+            // ahead, and a vertical width opening upward from the lowest tilt.
+            List sweep = confParts(s.cruiseconf, 4)
+            if (!sweep || p.kind == "ceiling") throw new IllegalArgumentException("this fan has no oscillation range setting")
+            boolean any = false
+            if (args.size() > 0 && args[0] != null && args[0] != "") {
+                int w = roundTo(intArg(args[0], "horizontal width"), 10)
+                int widest = Math.min(-(p.h[0] as int), p.h[1] as int) * 2
+                if (w < MIN_OSC_SPAN || w > widest) throw new IllegalArgumentException("horizontal sweep must be ${MIN_OSC_SPAN} to ${widest}°")
+                sweep[1] = w.intdiv(2)
+                sweep[3] = -w.intdiv(2)
+                any = true
+            }
+            if (args.size() > 1 && args[1] != null && args[1] != "") {
+                int w = roundTo(intArg(args[1], "vertical width"), 5)
+                int widest = (p.v[1] as int) - (p.v[0] as int)
+                if (w < MIN_OSC_SPAN || w > widest) throw new IllegalArgumentException("vertical sweep must be ${MIN_OSC_SPAN} to ${widest}°")
+                sweep[2] = p.v[0] as int
+                sweep[0] = (p.v[0] as int) + w
+                any = true
+            }
+            if (!any) throw new IllegalArgumentException("give a horizontal or vertical sweep width")
+            return [cruiseconf: sweep.join(",")]
+        case "setTemperatureOffset":
+            if (!(s.tempoffset instanceof Number)) throw new IllegalArgumentException("this fan has no temperature calibration")
+            return [tempoffset: clamp(intArg(a, "offset"), -TEMP_OFFSET_MAX, TEMP_OFFSET_MAX)]
+        case "setMist":
+            if (!s.containsKey("miston")) throw new IllegalArgumentException("this fan has no mist setting")
+            return [miston: onOffArg(a, "mist")]
     }
     if (cmd.startsWith("light.")) return lightParams(p, s, cmd.substring(6), args)
     if (cmd.startsWith("ring.")) return ringParams(p, s, cmd.substring(5), args, opts)
@@ -1621,6 +1863,12 @@ private Map ringParams(Map p, Map s, String cmd, List args, Map opts) {
             int cur = s.atmmode instanceof Number ? s.atmmode as int : 1
             int n = RING_EFFECTS.size()
             params = [atmmode: ((cur - 1 + (cmd == "setNextEffect" ? 1 : n - 1)) % n) + 1]
+            break
+        case "setEffectSpeed":
+            if (!(s.atmspeed instanceof Number)) throw new IllegalArgumentException("this light ring has no effect speed setting")
+            int sp = RING_SPEEDS.indexOf(a?.toString()?.toLowerCase()) + 1
+            if (sp < 1) throw new IllegalArgumentException("effect speed must be ${RING_SPEEDS.join(', ')}")
+            params = [atmspeed: sp]
             break
         default:
             throw new IllegalArgumentException("unknown light ring command ${cmd}")
@@ -1730,6 +1978,7 @@ List humidifierEvents(Map p, Map s) {
     if (s.containsKey("muteon")) ev << [name: "panelSound", value: s.muteon ? "off" : "on"]
     if (s.containsKey("ambient_switch")) ev << [name: "ambientLight", value: s.ambient_switch ? "on" : "off"]
     else if (s.rgblevel instanceof Number) ev << [name: "ambientLight", value: (s.rgblevel as int) > 0 ? "on" : "off"]
+    ev.addAll(settingEvents(s))
     return ev
 }
 
@@ -1741,10 +1990,16 @@ private int intArg(def v, String what) {
     }
 }
 
-/** Params for a humidifier command. Throws IllegalArgumentException for bad input. */
-Map humidifierCommand(Map p, Map s, String cmd, List args) {
+/**
+ * Params for a humidifier command. Throws IllegalArgumentException for bad
+ * input. `opts.ledlevelOn` and `opts.rgblevelOn` are the display and ambient
+ * light levels last seen on (the driver keeps them), restored by "on".
+ */
+Map humidifierCommand(Map p, Map s, String cmd, List args, Map opts = [:]) {
     def a = args ? args[0] : null
     boolean on = s.poweron as boolean
+    Map common = settingCommand(s, cmd, args)
+    if (common) return common
     // Mode, target or mist changes on a humidifier that is off also switch it on.
     Closure<Map> wake = { Map m -> on ? m : [poweron: true] + m }
     String modeId = modeOf(p, s)
@@ -1774,17 +2029,22 @@ Map humidifierCommand(Map p, Map s, String cmd, List args) {
             return wake(params)
         case "setDisplay":
             if (!s.containsKey("ledlevel")) throw new IllegalArgumentException("this humidifier has no display setting")
-            return [ledlevel: onOffArg(a, "display") ? 2 : 0]
+            return [ledlevel: onOffArg(a, "display") ? onLevel(opts?.ledlevelOn) : 0]
         case "setPanelSound":
             if (!s.containsKey("muteon")) throw new IllegalArgumentException("this humidifier has no panel sound setting")
             return [muteon: !onOffArg(a, "panel sound")]
         case "setAmbientLight":
             boolean lit = onOffArg(a, "ambient light")
             if (s.containsKey("ambient_switch")) return [ambient_switch: lit]
-            if (s.containsKey("rgblevel")) return [rgblevel: lit ? 2 : 0]
+            if (s.containsKey("rgblevel")) return [rgblevel: lit ? onLevel(opts?.rgblevelOn) : 0]
             throw new IllegalArgumentException("this humidifier has no ambient light")
     }
     throw new IllegalArgumentException("unknown command ${cmd}")
+}
+
+/** A remembered display or light level, else the Dreo app's middle setting. */
+private int onLevel(def remembered) {
+    return remembered instanceof Number && (remembered as int) > 0 ? remembered as int : 2
 }
 
 private void logDebug(String msg) {

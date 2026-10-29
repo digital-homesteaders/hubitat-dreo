@@ -20,7 +20,10 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   Dreo params (speeds incl. auto and leaving auto, step bounds, cycling, modes,
   single- and two-axis oscillation, display incl. `lightmode`, panel sound via
   `voiceon`/`muteon`, child lock, head position and oscillation range with
-  their angle ranges and the 8 s head settle, ceiling light, light ring); the ceiling-fan
+  their angle ranges, 5° rounding and the 8 s head settle, the sweep presets,
+  the tower-fan sweep angle and its presets from the device list, timers,
+  the schedules switch, adaptive brightness, temperature offset, mist,
+  ceiling light, light ring incl. effect speed); the ceiling-fan
   power gate (cases from hass-dreo's `PyDreoCeilingFan`); temperature with
   `tempunit` 0/1, the >50 rule, offsets and °F/°C hubs; RGB/hue round-trips;
   and the events for sample DR-HAF001S, DR-HPF008S (with light ring) and
@@ -45,7 +48,9 @@ Hubitat runs) against small stand-ins for the hub, then runs:
   reconnect, REST refresh, the speed-step
   preference, a humidifier from discovery through reports and commands, and
   the password hash: written as a password-type setting, never left in state,
-  and moved there from a 0.2 install's state; the drivers **Choose devices**
+  and moved there from a 0.2 install's state; every page of the rooms list;
+  a humidifier's display and ambient light coming back at their last level;
+  the half-hourly poll spread two seconds apart; the drivers **Choose devices**
   lists for the ticked devices, a device whose driver is missing named on
   the main page until the driver is installed, and a fan whose light ring
   driver is missing: error logged once, named on the main page, not tried
@@ -135,11 +140,54 @@ itself still needs checking.
    with one driver left out, and with a fan's light ring driver left out (one
    error in Logs, the fan named on the main page, the ring device appearing
    after the driver is pasted in, Done is pressed and the fan next reports).
+10. The settings added for parity with the Homey app (unreleased): on the
+    DR-HTF004S, `setOscillationAngle` (30/60/90/120) changes the sweep and
+    `setAdaptiveBrightness`; on a DR-HPF004S, `setOscillationSweep(90)` gives
+    ±45° and `setOscillationSweep(null, 60)` −30° to 30°, and an odd
+    `setOscillationRange` limit lands on a multiple of 5; on the DR-HPF008S,
+    `setTemperatureOffset` and the light ring's `setEffectSpeed`; on any
+    fan, `setTimerOff(1)` switches it off after a minute and `timerOff`
+    counts down in the reports, and `setSchedules(off)` pauses them in the
+    Dreo app. Still unknown: whether Dreo accepts a sweep width as a plain
+    `shakehorizonangle` while the fan is not oscillating.
 9. The 0.3.0 review fixes to the cloud connection: that Hubitat delivers one
    `status: closing` for a socket the driver closed itself, and none for one
    that had already failed (the driver expects exactly one after its own
    close, and takes it for the old socket's only within 3 s of the new open);
    and that a connect attempt the hub gives up on never leaves a socket open.
+11. **Open questions from the second code review (2026-10-29)**, to settle
+    with debug logging on the connection device (it logs every `Status:`
+    with the time). Each is a possible bug that depends on hub timing the
+    stand-in can't show; none has been seen on the C-8 yet.
+    - **Late close notice after a failure or timeout.** `socketDown` clears
+      `expectClose`, and `connect()` sets it only when the phase isn't
+      `closed`. So if a failed or timed-out socket's `status: closing`
+      arrives *after* the next connect has started (that is, more than the
+      5 s reconnect delay later), it is taken for the new attempt's drop: the
+      attempt is marked closed, another reconnect is scheduled, and the new
+      socket is closed when it opens. Look for a `failure:` or the connect
+      timeout followed by a `status: closing` after the next `Connecting`. If
+      it happens, a fix is to keep `expectClose` set after `socketDown`
+      whenever `close()` was called on a socket that hadn't yet reported
+      closing. (`drivers/dreo-cloud-connection.groovy`, `socketDown` and
+      `connect`.)
+    - **A real drop just after a restart may be ignored.** After a hub
+      reboot or new driver code, the phase is unknown, so `connect()` (and
+      the open handler when `was == null`) expects one close notice even if
+      no old socket exists. If Dreo then closes the new socket within 3 s of
+      opening (e.g. a rejected token), the notice is swallowed: the
+      attribute says `connected`, no reconnect is scheduled, and only an
+      unacknowledged command later notices. Check: after a reboot, does
+      Hubitat ever send a close notice for the socket from before the
+      reboot? If never, `expectClose` is needed only after new code, not a
+      reboot.
+    - **Discovery overlap on slow accounts.** A discovery counts as over
+      after 45 s (`DISCOVERY_TIMEOUT_MS`), but the device list plus several
+      rooms pages, each with a 30 s timeout, can take longer. A Done or
+      **Look again** then starts a second discovery, and the first one's
+      late `discoverRooms` clears the second's `discovering` flag. This only
+      affects accounts with several homes on a slow link. If seen, tag each
+      discovery with an id and ignore callbacks from an older one.
 
 ### The password hash setting
 

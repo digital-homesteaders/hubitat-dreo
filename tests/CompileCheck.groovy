@@ -66,7 +66,7 @@ check("child device methods called by the app exist and are public") {
         conn: ["drivers/dreo-cloud-connection.groovy"],
     ]
     // Hubitat's own device methods, not the driver's.
-    List<String> builtIn = ["getDataValue", "updateDataValue", "currentValue", "getDeviceNetworkId", "getDisplayName"]
+    List<String> builtIn = ["getDataValue", "updateDataValue", "removeDataValue", "currentValue", "getDeviceNetworkId", "getDisplayName"]
     drivers.each { String var, List<String> paths ->
         List<String> called = (app =~ /\b${var}\??\.(\w+)\s*\(/).collect { it[1] }.unique() - builtIn
         assert called, "no ${var}.x() calls found"
